@@ -42,8 +42,9 @@ import { CityBoss } from './ent/cityboss.js';
 import { Canetadas } from './sys/canetadas.js';
 import { HomingMissiles } from './sys/homing.js';
 import { Fireballs } from './sys/fireballs.js';
+import { Drops } from './sys/drops.js';
 import { CHEFES } from './ent/foe.js';
-import { Audio, VOLUMES, DEFAULT_VOLUME } from './sys/audio.js';
+import { Audio } from './sys/audio.js';
 import { Music } from './sys/music.js';
 
 const $ = (id) => document.getElementById(id);
@@ -204,6 +205,8 @@ export class Game {
       this.canetadas = new Canetadas(this.gfx.scene, this.fx);
       // bolas de fogo: o tiro dos inimigos, proporcional a cada um
       this.bolas = new Fireballs(this.gfx.scene, this.fx);
+      // itens que caem de quem você derruba
+      this.drops = new Drops(this.gfx.scene, this.fx);
       // arma pesada de recarga longa: trava no alvo e persegue
       this.teleguiado = new HomingMissiles(this.gfx.scene, this.fx, 11);
       this.teleguiado.onAcerto = (foe, ponto) => this._acertarFoe(foe, ponto, 120, true);
@@ -250,7 +253,7 @@ export class Game {
     this.presetIndex = this.settings.get('presetIndex');
     this.applyPreset(this.presetIndex);
     this.applyRenderDistance(this.settings.get('renderDistanceIndex'));
-    this.applyVolume(this.settings.get('volumeIndex'));
+    this.applyVolume(this.settings.get('volEfeitos'), this.settings.get('volMusica'));
     this.applyPopulation(this.settings.get('populationIndex'));  // [61]
     this.setDayNight(this.settings.get('cycleMode'));         // [13]
     $('timer-enabled').checked = this.settings.get('timerEnabled');   // [8]
@@ -338,7 +341,7 @@ export class Game {
       if (code === 'KeyN') this.cycleDayNight();              // [13] iluminação
       if (code === 'KeyP') this.cyclePopulation();            // [61] movimento na cidade
       if (code === 'KeyX') this._dispararTeleguiado();       // míssil teleguiado
-      if (code === 'KeyO') this.cycleVolume();               // volume dos efeitos
+      if (code === 'KeyO') this.toggleMudo();                 // mudo geral
       if (code === 'KeyL') this.cycleRenderDistance();   // alcance de renderização
       if (code === 'KeyM') this.toggleGod();                  // [60] modo Deus
     };
@@ -349,9 +352,15 @@ export class Game {
     }
 
     // ---------------------------------------------------- [61] movimento na cidade
-    for (const btn of document.querySelectorAll('#vol-group .choice')) {
-      btn.addEventListener('click', () => { this.audio.acordar(); this.applyVolume(Number(btn.dataset.vol)); });
-    }
+    // sliders de volume: efeitos e música em canais separados
+    $('vol-efeitos').addEventListener('input', (e) => {
+      this.audio.acordar();
+      this.applyVolume(Number(e.target.value), null);
+    });
+    $('vol-musica').addEventListener('input', (e) => {
+      this.audio.acordar();
+      this.applyVolume(null, Number(e.target.value));
+    });
 
     for (const btn of document.querySelectorAll('#pop-group .choice')) {
       btn.addEventListener('click', () => this.applyPopulation(Number(btn.dataset.pop)));
@@ -820,22 +829,50 @@ export class Game {
     if (this.hud) this.hud.toast('ALCANCE: ' + d.label, 'time');
   }
 
-  applyVolume(index) {
-    const base = Number.isInteger(index) ? index : DEFAULT_VOLUME;
-    const i = (base % VOLUMES.length + VOLUMES.length) % VOLUMES.length;
-    this.volIndex = i;
-    this.audio.setGanho(VOLUMES[i].ganho);
-    this.settings.set('volumeIndex', i);
-    for (const b of document.querySelectorAll('#vol-group .choice')) {
-      b.classList.toggle('active', Number(b.dataset.vol) === i);
+  /**
+   * Volume, em dois canais independentes.
+   *
+   * @param {number} efeitos 0..100 (ou null para não mexer)
+   * @param {number} musica  0..100 (ou null para não mexer)
+   */
+  applyVolume(efeitos, musica) {
+    const lim = (v) => Math.max(0, Math.min(100, Math.round(v)));
+    if (Number.isFinite(efeitos)) {
+      this.volEfeitos = lim(efeitos);
+      this.audio.setGanho(this.volEfeitos / 100);
+      this.settings.set('volEfeitos', this.volEfeitos);
+      const el = $('vol-efeitos'), lb = $('vol-efeitos-val');
+      if (el) el.value = this.volEfeitos;
+      if (lb) lb.textContent = this.volEfeitos;
     }
-    if (this.hud) this.hud.toast('SOM: ' + VOLUMES[i].label, 'time');
+    if (Number.isFinite(musica)) {
+      this.volMusica = lim(musica);
+      this.audio.setGanhoMusica(this.volMusica / 100);
+      this.settings.set('volMusica', this.volMusica);
+      const el = $('vol-musica'), lb = $('vol-musica-val');
+      if (el) el.value = this.volMusica;
+      if (lb) lb.textContent = this.volMusica;
+    }
   }
 
-  cycleVolume() {
-    this.applyVolume((this.volIndex ?? DEFAULT_VOLUME) + 1);
+  /**
+   * [O] Mudo: zera os dois e devolve o que estava antes.
+   *
+   * Guardar os valores para restaurar é o que separa "mudo" de
+   * "abaixei tudo": quem silencia para atender alguém quer o mesmo
+   * equilíbrio de volta depois, não recomeçar dos sliders.
+   */
+  toggleMudo() {
+    if (this.volEfeitos > 0 || this.volMusica > 0) {
+      this._volAntes = { e: this.volEfeitos, m: this.volMusica };
+      this.applyVolume(0, 0);
+      this.hud.toast('SOM: MUDO', 'time');
+    } else {
+      const v = this._volAntes || { e: 55, m: 45 };
+      this.applyVolume(v.e, v.m);
+      this.hud.toast('SOM LIGADO', 'time');
+    }
   }
-
   cycleRenderDistance() {
     this.applyRenderDistance((this.distIndex ?? DEFAULT_RENDER_DISTANCE) + 1);
   }
@@ -1072,6 +1109,23 @@ export class Game {
     })) this.audio.tiro();
   }
 
+  /** Pegou um item: cura, ou recarrega o teleguiado no caso da GPU. */
+  _pegarItem(it) {
+    const d = it.def;
+    if (d.recarrega) {
+      this.teleguiado.recarga = 0;
+      this.hud.toast(d.nome + ' — MÍSSIL PRONTO', 'good');
+    } else {
+      const antes = this.hearts;
+      this.hearts = Math.min(PLAYER.maxHearts, this.hearts + d.cura);
+      this.hud.setHearts(this.hearts);
+      const ganho = this.hearts - antes;
+      this.hud.toast(d.nome + (ganho > 0 ? ' +' + ganho + ' ❤' : ''), 'good');
+      this.semDano = 0;
+    }
+    this.audio.item(true);
+  }
+
   /** Aviso que não repete em rajada: um por tipo a cada 2,5 s. */
   _avisoUmaVez(chave, texto) {
     this._avisos = this._avisos || {};
@@ -1245,6 +1299,12 @@ export class Game {
       this.camera.addShake(foe.chefe ? 0.5 : 0.25);
       this.audio.explosao(foe.chefe ? 3 : 1);
       this.audio.abateu();
+      /*
+       * Chefão SEMPRE larga alguma coisa; capanga larga às vezes.
+       * Sem drop a vida só anda para baixo e a fase vira um orçamento
+       * fixo de corações; com ele, lutar bem paga.
+       */
+      this.drops.talvezSoltar(foe.root.position, foe.chefe ? 1 : 0.22);
       this.mission.score += foe.ficha.pontos || 5;
     }
   }
@@ -1368,6 +1428,7 @@ export class Game {
     if (this.colosso) { this.colosso.remover(); this.colosso = null; }
     this.canetadas.limpar();
     this.bolas.limpar();
+    this.drops.limpar();
     this.teleguiado.limpar();
     this.missiles.setFoes(null);
     this.bullets.setFoes(null);
@@ -1473,6 +1534,16 @@ export class Game {
     const noCarro = jogando && this.mode === 'car';
 
     this.audio.motor(frac, noCarro);
+
+    /*
+     * Hélice: só no helicóptero. A "carga" vem da velocidade vertical
+     * — subir puxa o rotor e o som fecha; descendo ele alivia. É o que
+     * dá peso ao comando sem precisar de instrumento na tela.
+     */
+    const noHeli = jogando && this.mode === 'heli';
+    const carga = noHeli ? Math.min(1, Math.abs(this.heli.vel.y) / 12) : 0;
+    this.audio.helice(noHeli, carga);
+
     if (!jogando) this.audio.calarZumbido();
   }
 
@@ -1657,6 +1728,10 @@ export class Game {
     if (danoBola > 0 && this.invuln <= 0 && !this.god && !this.dialogue.ativo) {
       this._damagePlayer('Atingido por uma bola de fogo');
     }
+
+    // itens caídos: coleta por proximidade
+    const pego = this.drops.update(dt, this.player.position, this.col);
+    if (pego) this._pegarItem(pego);
     this.missiles.setFoes(this.stage.foes);
     this.bullets.setFoes(this.stage.foes);
     this._avisoColosso();

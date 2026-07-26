@@ -663,3 +663,29 @@ kbd{
   border:1px solid rgba(255,255,255,.25); border-radius:3px;
   padding:0 4px; font-size:9px;
 }
+
+/* ---------------------- sliders de volume ---------------------- */
+.slider-row{
+  display:flex; align-items:center; gap:12px;
+  margin:8px auto 0; max-width:340px;
+}
+.slider-row label{
+  font-size:10px; font-weight:800; letter-spacing:2px; opacity:.7;
+  width:64px; text-align:right;
+}
+.slider-row input[type=range]{
+  flex:1 1 auto; -webkit-appearance:none; appearance:none;
+  height:5px; border-radius:999px; background:rgba(255,255,255,.16); outline:none;
+}
+.slider-row input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none; width:15px; height:15px;
+  border-radius:50%; background:var(--accent); cursor:pointer;
+  box-shadow:0 2px 8px rgba(0,0,0,.6);
+}
+.slider-row input[type=range]::-moz-range-thumb{
+  width:15px; height:15px; border:none; border-radius:50%;
+  background:var(--accent); cursor:pointer;
+}
+.slider-val{
+  font-size:10px; font-weight:800; opacity:.55; width:26px; text-align:left;
+}

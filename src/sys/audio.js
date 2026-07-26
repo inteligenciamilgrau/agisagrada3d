@@ -17,20 +17,28 @@
  * no primeiro gesto real — que no jogo é o clique em INICIAR.
  */
 
-/** Níveis do volume (tecla `O`). */
-export const VOLUMES = [
-  { id: 'mudo',  label: 'MUDO',  ganho: 0 },
-  { id: 'baixo', label: 'BAIXO', ganho: 0.25 },
-  { id: 'medio', label: 'MÉDIO', ganho: 0.55 },
-  { id: 'alto',  label: 'ALTO',  ganho: 1.0 },
-];
-export const DEFAULT_VOLUME = 2;
+/**
+ * Volumes padrão, em 0..1. São dois BARRAMENTOS separados: cada um
+ * tem seu ganho e os dois desaguam no mestre.
+ *
+ * Separar não é luxo — os dois disputam a mesma faixa. Quem quer
+ * ouvir a trilha inteira precisa abaixar o tiro; quem joga com a
+ * família dormindo quer o efeito baixo e a música desligada. Com um
+ * controle só, toda escolha é um meio-termo ruim.
+ */
+export const VOL_EFEITOS_PADRAO = 0.55;
+export const VOL_MUSICA_PADRAO = 0.45;
 
 export class Audio {
   constructor() {
     this.ctx = null;
     this.master = null;
-    this.ganho = VOLUMES[DEFAULT_VOLUME].ganho;
+    /** Saída dos EFEITOS (tiro, explosão, motor, passos). */
+    this.efeitos = null;
+    /** Saída da TRILHA. `music.js` pendura tudo aqui. */
+    this.musica = null;
+    this.ganho = VOL_EFEITOS_PADRAO;
+    this.ganhoMusica = VOL_MUSICA_PADRAO;
     this._ruidoBuf = null;
     /*
      * Trava por efeito: sem ela, uma explosão que pega 12 pedestres
@@ -48,18 +56,34 @@ export class Audio {
       if (!AC) return;                       // navegador sem WebAudio: jogo segue mudo
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.ganho;
+      this.master.gain.value = 1;
       this.master.connect(this.ctx.destination);
+
+      this.efeitos = this.ctx.createGain();
+      this.efeitos.gain.value = this.ganho;
+      this.efeitos.connect(this.efeitos);
+
+      this.musica = this.ctx.createGain();
+      this.musica.gain.value = this.ganhoMusica;
+      this.musica.connect(this.efeitos);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
+  /** Volume dos efeitos (0..1). */
   setGanho(v) {
     this.ganho = v;
-    if (this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
+    if (this.efeitos) this.efeitos.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
+  }
+
+  /** Volume da trilha (0..1). */
+  setGanhoMusica(v) {
+    this.ganhoMusica = v;
+    if (this.musica) this.musica.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
   }
 
   get pronto() { return !!this.ctx && this.ganho > 0; }
+  get prontoMusica() { return !!this.ctx && this.ganhoMusica > 0; }
 
   _podeTocar(chave, minIntervalo) {
     const t = this.ctx.currentTime;
@@ -94,7 +118,7 @@ export class Audio {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-    src.connect(f); f.connect(g); g.connect(this.master);
+    src.connect(f); f.connect(g); g.connect(this.efeitos);
     src.start(t); src.stop(t + dur + 0.02);
   }
 
@@ -109,7 +133,7 @@ export class Audio {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(this.master);
+    o.connect(g); g.connect(this.efeitos);
     o.start(t); o.stop(t + dur + 0.02);
   }
 
@@ -235,7 +259,7 @@ export class Audio {
     o2.type = 'sawtooth'; o2.frequency.value = 97;
     f.type = 'bandpass'; f.frequency.value = 420; f.Q.value = 2.2;
     g.gain.setValueAtTime(0.0001, t);
-    o.connect(f); o2.connect(f); f.connect(g); g.connect(this.master);
+    o.connect(f); o2.connect(f); f.connect(g); g.connect(this.efeitos);
     o.start(t); o2.start(t);
     this._zum = { o, o2, g, f };
   }
@@ -284,7 +308,7 @@ export class Audio {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0005, t + 0.05);
-    src.connect(f); f.connect(g); g.connect(this.master);
+    src.connect(f); f.connect(g); g.connect(this.efeitos);
     src.start(t); src.stop(t + 0.07);
     // "tin" metálico por cima, para não virar só estalo de ruído
     this._nota({ de: 2600 + Math.random() * 500, para: 1500, dur: 0.045, vol: vol * 0.5, onda: 'square' });
@@ -313,7 +337,7 @@ export class Audio {
     o2.type = 'square'; o2.frequency.value = 30;      // oitava abaixo: o ronco
     f.type = 'lowpass'; f.frequency.value = 700; f.Q.value = 1.4;
     g.gain.setValueAtTime(0.0001, t);
-    o.connect(f); o2.connect(f); f.connect(g); g.connect(this.master);
+    o.connect(f); o2.connect(f); f.connect(g); g.connect(this.efeitos);
     o.start(t); o2.start(t);
     this._motor = { o, o2, g, f };
   }
@@ -375,6 +399,62 @@ export class Audio {
     if (!this.pronto || !this._podeTocar('aterrissar', 0.09)) return;
     this._bum({ dur: 0.16 + forca * 0.2, vol: 0.12 + forca * 0.32, corte: 700, alvoCorte: 70 });
     if (forca > 0.35) this._nota({ de: 120, para: 45, dur: 0.16, vol: forca * 0.22, onda: 'sine' });
+  }
+
+  // ---------------------------------------------------- hélice
+  /**
+   * HÉLICE — o "flap-flap-flap" do rotor.
+   *
+   * Não é um tom: é ruído passando por um filtro que ABRE E FECHA na
+   * frequência das pás. É essa modulação que o ouvido lê como pá
+   * cortando o ar; um oscilador puro soaria como zumbido de inseto,
+   * que é justamente o som dos drones e ia confundir os dois.
+   */
+  _ligarHelice() {
+    const t = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this._ruido();
+    src.loop = true;
+
+    const f = this.ctx.createBiquadFilter();
+    f.type = "bandpass"; f.frequency.value = 320; f.Q.value = 1.1;
+
+    // LFO: abre e fecha o filtro na cadência das pás
+    const lfo = this.ctx.createOscillator();
+    lfo.type = "sine"; lfo.frequency.value = 13;
+    const lfoG = this.ctx.createGain();
+    lfoG.gain.value = 220;
+    lfo.connect(lfoG); lfoG.connect(f.frequency);
+
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    src.connect(f); f.connect(g); g.connect(this.efeitos);
+    src.start(t); lfo.start(t);
+    this._helice = { src, f, g, lfo };
+  }
+
+  /**
+   * @param {boolean} ligado  o jogador está no helicóptero
+   * @param {number} carga    0 = marcha lenta, 1 = subindo com tudo
+   */
+  helice(ligado, carga = 0) {
+    if (!this.ctx) return;
+    if (!this._helice) this._ligarHelice();
+    const t = this.ctx.currentTime;
+    const h = this._helice;
+
+    if (!ligado || this.ganho <= 0) {
+      h.g.gain.setTargetAtTime(0, t, 0.25);
+      return;
+    }
+    // volume contido: é pano de fundo do voo, não protagonista
+    h.g.gain.setTargetAtTime(0.02 + carga * 0.022, t, 0.15);
+    h.lfo.frequency.setTargetAtTime(12 + carga * 5, t, 0.2);
+    h.f.frequency.setTargetAtTime(300 + carga * 190, t, 0.2);
+  }
+
+  calarHelice() {
+    if (this._helice) this._helice.g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
   }
 
   /** Perto de um portal. */

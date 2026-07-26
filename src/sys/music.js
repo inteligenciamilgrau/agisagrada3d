@@ -212,7 +212,8 @@ export class Music {
   }
 
   get ctx() { return this.audio.ctx; }
-  get destino() { return this.audio.master; }
+  /** A trilha sai pelo barramento de MÚSICA, com volume próprio. */
+  get destino() { return this.audio.musica; }
   get vol() { return MV_MUSICA; }
 
   /** Troca de trilha. Reinicia do compasso 1 — a entrada tem que ser clara. */
@@ -227,7 +228,7 @@ export class Music {
 
   /** Chamado a cada quadro: agenda tudo que couber na janela de ATRASO. */
   update() {
-    if (!this.ligada || !this.nome || !this.ctx || this.audio.ganho <= 0) return;
+    if (!this.ligada || !this.nome || !this.ctx || !this.audio.prontoMusica) return;
     const trk = TRACKS[this.nome];
     if (!trk) return;
 
@@ -536,7 +537,7 @@ export class Music {
 
   /** Fanfarra de chefão derrotado, por cima da trilha. */
   fanfarra() {
-    if (!this.ctx || this.audio.ganho <= 0) return;
+    if (!this.ctx || !this.audio.prontoMusica) return;
     const t0 = this.ctx.currentTime + 0.03;
     const seq = [60, 64, 67, 72, 67, 72, 76, 79];
     seq.forEach((m, i) => this._piano(t0 + i * 0.09, m, 0.09));

@@ -222,7 +222,7 @@
       <div class="ctl"><kbd>C</kbd><span>Celular</span></div>
       <div class="ctl"><kbd>G</kbd><span>Qualidade gráfica</span></div>
       <div class="ctl"><kbd>L</kbd><span>Alcance de renderização</span></div>
-      <div class="ctl"><kbd>O</kbd><span>Volume do som</span></div>
+      <div class="ctl"><kbd>O</kbd><span>Mudo (liga/desliga o som)</span></div>
       <div class="ctl"><kbd>N</kbd><span>Dia / noite / ciclo</span></div>
       <div class="ctl"><kbd>P</kbd><span>Movimento na cidade</span></div>
       <!-- [60] voar / [61] movimento na cidade -->
@@ -240,8 +240,8 @@
     <div id="cycle-choice">
       <span class="choice-label">ILUMINAÇÃO</span>
       <div class="choice-group" id="cycle-group">
-        <button type="button" class="choice active" data-cycle="ciclo">CICLO DIA/NOITE</button>
-        <button type="button" class="choice" data-cycle="dia">SEMPRE DIA</button>
+        <button type="button" class="choice" data-cycle="ciclo">CICLO DIA/NOITE</button>
+        <button type="button" class="choice active" data-cycle="dia">SEMPRE DIA</button>
         <button type="button" class="choice" data-cycle="noite">SEMPRE NOITE</button>
       </div>
     </div>
@@ -260,11 +260,15 @@
 
     <div id="vol-choice">
       <span class="choice-label">SOM</span>
-      <div class="choice-group" id="vol-group">
-        <button type="button" class="choice" data-vol="0">MUDO</button>
-        <button type="button" class="choice" data-vol="1">BAIXO</button>
-        <button type="button" class="choice active" data-vol="2">MÉDIO</button>
-        <button type="button" class="choice" data-vol="3">ALTO</button>
+      <div class="slider-row">
+        <label for="vol-efeitos">EFEITOS</label>
+        <input type="range" id="vol-efeitos" min="0" max="100" step="5" value="55">
+        <span class="slider-val" id="vol-efeitos-val">55</span>
+      </div>
+      <div class="slider-row">
+        <label for="vol-musica">MÚSICA</label>
+        <input type="range" id="vol-musica" min="0" max="100" step="5" value="45">
+        <span class="slider-val" id="vol-musica-val">45</span>
       </div>
     </div>
 

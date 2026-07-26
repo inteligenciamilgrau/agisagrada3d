@@ -2,7 +2,7 @@ import {
   PRESETS, DEFAULT_PRESET, POPULATIONS, DEFAULT_POPULATION,
   RENDER_DISTANCES, DEFAULT_RENDER_DISTANCE,
 } from './config.js';
-import { VOLUMES, DEFAULT_VOLUME } from './sys/audio.js';
+import { VOL_EFEITOS_PADRAO, VOL_MUSICA_PADRAO } from './sys/audio.js';
 
 /**
  * Preferências do jogador, guardadas no localStorage do navegador.
@@ -16,11 +16,21 @@ const CHAVE = 'cidade3d:config:v1';
 
 const PADRAO = {
   timerEnabled: false,                  // [8] começa sem limite de tempo
-  cycleMode: 'ciclo',                   // [13] ciclo | dia | noite
+  /*
+   * [13] SEMPRE DIA por padrão.
+   *
+   * O ciclo dia/noite é bonito e continua disponível na tecla N, mas
+   * como PADRÃO ele atrapalha: metade das partidas começa no escuro,
+   * e a campanha depende de enxergar o inimigo chegando de longe numa
+   * cidade aberta. Quem quiser a noite escolhe; quem só quer jogar
+   * não devia precisar escolher.
+   */
+  cycleMode: 'dia',                     // ciclo | dia | noite
   presetIndex: DEFAULT_PRESET,          // qualidade gráfica
   populationIndex: DEFAULT_POPULATION,  // [61] quantidade de gente e carros
   renderDistanceIndex: DEFAULT_RENDER_DISTANCE,  // alcance de renderização
-  volumeIndex: DEFAULT_VOLUME,                   // volume dos efeitos
+  volEfeitos: Math.round(VOL_EFEITOS_PADRAO * 100),   // 0..100
+  volMusica: Math.round(VOL_MUSICA_PADRAO * 100),     // 0..100
 };
 
 const CICLOS = ['ciclo', 'dia', 'noite'];
@@ -48,9 +58,9 @@ function sanear(bruto) {
       && bruto.renderDistanceIndex >= 0 && bruto.renderDistanceIndex < RENDER_DISTANCES.length) {
     s.renderDistanceIndex = bruto.renderDistanceIndex;
   }
-  if (Number.isInteger(bruto.volumeIndex)
-      && bruto.volumeIndex >= 0 && bruto.volumeIndex < VOLUMES.length) {
-    s.volumeIndex = bruto.volumeIndex;
+  for (const k of ['volEfeitos', 'volMusica']) {
+    const v = bruto[k];
+    if (Number.isFinite(v) && v >= 0 && v <= 100) s[k] = Math.round(v);
   }
   return s;
 }
