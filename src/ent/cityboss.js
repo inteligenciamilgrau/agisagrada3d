@@ -30,10 +30,25 @@ import { HUMANOIDES, MODELOS, montarModelo } from './voxeldef.js';
  * Amarrar a marcha ao tamanho faria os dois jogarem a mesma luta.
  */
 
+/**
+ * `bola` é o tiro do chefão, e o RAIO acompanha a altura: um médio
+ * cospe uma bola de um metro, o colosso atira uma esfera de seis que
+ * ilumina a rua. O tamanho é a leitura da ameaça — e a bola grande
+ * também é mais fácil de desviar, o que compensa doer mais.
+ */
 export const PORTES = {
-  medio:    { altura: 4.5, soMissil: false, tremor: 0.10, alcanceGolpe: 4.5 },
-  grande:   { altura: 15,  soMissil: false, tremor: 0.26, alcanceGolpe: 13 },
-  colossal: { altura: 55,  soMissil: true,  tremor: 0.50, alcanceGolpe: 23 },
+  medio: {
+    altura: 4.5, soMissil: false, tremor: 0.10, alcanceGolpe: 4.5,
+    bola: { raio: 1.0, vel: 26, recarga: 2.4, alcance: 60 },
+  },
+  grande: {
+    altura: 15, soMissil: false, tremor: 0.26, alcanceGolpe: 13,
+    bola: { raio: 2.6, vel: 24, recarga: 2.8, alcance: 110 },
+  },
+  colossal: {
+    altura: 55, soMissil: true, tremor: 0.50, alcanceGolpe: 23,
+    bola: { raio: 6.0, vel: 30, recarga: 3.2, alcance: 240 },
+  },
 };
 
 const _v = new THREE.Vector3();
@@ -112,6 +127,7 @@ export class CityBoss {
 
     this.onPisada = null;
     this.onCanetada = null;
+    this.onBola = null;
     this.onChegou = null;
     this._passoAnterior = 0;
   }
@@ -316,6 +332,11 @@ export class CityBoss {
           _v.set(p.x, p.y + this.porte.altura * 0.72, p.z);
           this.onCanetada(_v, alvo);
         }
+      } else if (this.porte.bola && dAlvo < this.porte.bola.alcance) {
+        // bola de fogo: o tiro comum de quem não solta canetada
+        this.recarga = this.porte.bola.recarga;
+        if (this.fig && !this.noAlto) this.fig.golpear();
+        if (this.onBola) this.onBola(this, this.porte.bola);
       }
     }
 

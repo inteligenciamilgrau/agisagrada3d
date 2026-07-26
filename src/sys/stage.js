@@ -83,6 +83,7 @@ export class StageRunner {
    */
   adotarChefe(foe) {
     this.chefe = foe;
+    foe.onBola = this.onBola;
     this.foes.push(foe);
     this.elNome.textContent = foe.ficha.nome;
     this.elBarra.classList.remove('hidden');
@@ -120,7 +121,9 @@ export class StageRunner {
       if (!ficha) continue;
       for (let i = 0; i < qtd; i++) {
         const p = this._pontoDeEntrada(i, qtd);
-        this.foes.push(new Foe(this.grupo, ficha, p));
+        const f = new Foe(this.grupo, ficha, p);
+        f.onBola = this.onBola;
+        this.foes.push(f);
       }
     }
   }
@@ -280,6 +283,7 @@ export class StageRunner {
            */
           this._limparCapangas();
           if (this.chefe.onMorreu) this.chefe.onMorreu();
+          if (this.onLimparTiros) this.onLimparTiros();
           this.estado = 'vitoria';
           this.pausa = 1.1;
         }

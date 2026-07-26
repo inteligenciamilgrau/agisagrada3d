@@ -15,14 +15,50 @@ import { CORCOVADO } from '../world/landmarks.js';
  */
 
 /** Fichas dos inimigos comuns. `modelo` aponta para `voxeldef.js`. */
+/**
+ * Fichas dos inimigos comuns. `modelo` aponta para `voxeldef.js`.
+ *
+ * `bola` é o tiro: { raio, vel, recarga, alcance, cor }. Quem tem bola
+ * PARA a uma distância e atira, em vez de correr para o corpo a corpo —
+ * é o que faz a onda ter frente e fundo, com uns pressionando de perto
+ * e outros castigando de longe.
+ */
 export const FICHAS = {
-  drone:      { vida: 20, vel: 6.5,  voa: 3.2, dano: 1, alcance: 2.2, recarga: 1.5, pontos: 5,  modelo: 'drone' },
-  crawler:    { vida: 26, vel: 4.6,  dano: 1, alcance: 2.0, recarga: 1.4, pontos: 5,  modelo: 'crawler' },
-  lobista:    { vida: 32, vel: 3.4,  dano: 1, alcance: 2.4, recarga: 1.6, pontos: 8,  humano: 'lobista' },
-  advogado:   { vida: 40, vel: 3.0,  dano: 1, alcance: 2.4, recarga: 1.8, pontos: 10, humano: 'advogado' },
-  pm:         { vida: 34, vel: 3.6,  dano: 1, alcance: 2.6, recarga: 1.5, pontos: 8,  humano: 'pm' },
-  optimus:    { vida: 46, vel: 3.8,  dano: 1, alcance: 2.4, recarga: 1.4, pontos: 12, humano: 'optimus' },
-  clone:      { vida: 38, vel: 4.4,  dano: 1, alcance: 2.4, recarga: 1.3, pontos: 12, humano: 'clone' },
+  drone: {
+    vida: 20, vel: 6.5, voa: 3.2, dano: 1, alcance: 2.2, recarga: 1.5, pontos: 5,
+    modelo: 'drone',
+    bola: { raio: 0.42, vel: 30, recarga: 2.2, alcance: 55, cor: 0xff4d4d },
+  },
+  crawler: {
+    vida: 26, vel: 4.6, dano: 1, alcance: 2.0, recarga: 1.4, pontos: 5,
+    modelo: 'crawler',
+    bola: { raio: 0.5, vel: 24, recarga: 2.6, alcance: 42, cor: 0xff7a1a },
+  },
+  lobista: {
+    vida: 32, vel: 3.4, dano: 1, alcance: 2.4, recarga: 1.6, pontos: 8,
+    humano: 'lobista',
+    bola: { raio: 0.55, vel: 26, recarga: 3.0, alcance: 45, cor: 0xffd700 },
+  },
+  advogado: {
+    vida: 40, vel: 3.0, dano: 1, alcance: 2.4, recarga: 1.8, pontos: 10,
+    humano: 'advogado',
+    bola: { raio: 0.62, vel: 22, recarga: 3.2, alcance: 48, cor: 0xf5f5f0 },
+  },
+  pm: {
+    vida: 34, vel: 3.6, dano: 1, alcance: 2.6, recarga: 1.5, pontos: 8,
+    humano: 'pm',
+    bola: { raio: 0.55, vel: 27, recarga: 2.8, alcance: 45, cor: 0x0d9488 },
+  },
+  optimus: {
+    vida: 46, vel: 3.8, dano: 1, alcance: 2.4, recarga: 1.4, pontos: 12,
+    humano: 'optimus',
+    bola: { raio: 0.6, vel: 32, recarga: 2.4, alcance: 52, cor: 0xff4d4d },
+  },
+  clone: {
+    vida: 38, vel: 4.4, dano: 1, alcance: 2.4, recarga: 1.3, pontos: 12,
+    humano: 'clone',
+    bola: { raio: 0.5, vel: 28, recarga: 2.5, alcance: 46, cor: 0x25d0ff },
+  },
 };
 
 /** Fichas dos chefões. `fases` são os limiares de vida que mudam o padrão. */
@@ -118,9 +154,14 @@ export const CHEFES = {
     nome: 'XI DEEP-ZEEK', vida: 950, vel: 7.5, dano: 1, alcance: 23, recarga: 2.2,
     pontos: 300, modelo: 'deepzeek', porte: 'colossal', voa: true, colossal: true,
     fases: [
-      { ate: 1.00, rotulo: 'GOLPES CATALOGADOS E CLONADOS', chama: 2, tipo: 'clone', vel: 7.5, canetada: 1, intervalo: 3.0 },
+      /*
+       * Sem `canetada`: decreto de papel é assinatura do Trunfo. O
+       * dragão usa a BOLA DE FOGO do porte colossal — seis metros de
+       * diâmetro, que é o que se espera de um bicho desse tamanho.
+       */
+      { ate: 1.00, rotulo: 'GOLPES CATALOGADOS E CLONADOS', chama: 2, tipo: 'clone', vel: 7.5 },
       // solta o próprio modelo de graça: para de chamar clone contra você
-      { ate: 0.40, rotulo: 'ABRIU O MODELO DE GRAÇA', chama: 0, vel: 9, canetada: 2, intervalo: 2.4 },
+      { ate: 0.40, rotulo: 'ABRIU O MODELO DE GRAÇA', chama: 0, vel: 9 },
     ],
   },
 };
@@ -170,6 +211,8 @@ export class Foe {
     // fase atual do chefão
     this.faseIdx = 0;
     this.chamaT = 0;
+    /** Avisado quando ele atira: quem cria a bola é o `game.js`. */
+    this.onBola = null;
   }
 
   get position() { return this.root.position; }
@@ -227,8 +270,14 @@ export class Foe {
     let golpe = 0;
     this.recarga = Math.max(0, this.recarga - dt);
 
-    // ---- aproxima até o alcance do golpe, depois para
-    const parar = this.ficha.alcance * 0.85;
+    /*
+     * Quem tem BOLA para longe e atira; quem não tem vem para cima.
+     * A distância de parada é 70% do alcance do tiro — perto o bastante
+     * para acertar, longe o bastante para o jogador ter espaço de
+     * desviar da bola que já está no ar.
+     */
+    const b = this.ficha.bola;
+    const parar = b ? b.alcance * 0.7 : this.ficha.alcance * 0.85;
     let vel = 0;
     if (distH > parar) {
       vel = this.ficha.vel;
@@ -241,10 +290,17 @@ export class Foe {
         p.z -= (dz / distH) * passo;
       }
     } else if (this.recarga <= 0) {
-      // ---- golpe
-      this.recarga = this.ficha.recarga;
-      if (this.fig) this.fig.golpear();
-      golpe = this.ficha.dano;
+      if (b && distH > this.ficha.alcance) {
+        // ---- tiro: bola de fogo na direção do jogador
+        this.recarga = b.recarga;
+        if (this.fig) this.fig.golpear();
+        if (this.onBola) this.onBola(this, b);
+      } else {
+        // ---- golpe corpo a corpo
+        this.recarga = this.ficha.recarga;
+        if (this.fig) this.fig.golpear();
+        golpe = this.ficha.dano;
+      }
     }
 
     // ---- altura: voador flutua, terrestre pisa no chão

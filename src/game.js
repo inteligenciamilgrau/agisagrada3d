@@ -41,6 +41,7 @@ import { ViewModel } from './ent/viewmodel.js';
 import { CityBoss } from './ent/cityboss.js';
 import { Canetadas } from './sys/canetadas.js';
 import { HomingMissiles } from './sys/homing.js';
+import { Fireballs } from './sys/fireballs.js';
 import { CHEFES } from './ent/foe.js';
 import { Audio, VOLUMES, DEFAULT_VOLUME } from './sys/audio.js';
 import { Music } from './sys/music.js';
@@ -201,6 +202,8 @@ export class Game {
       this.viewmodel = new ViewModel(this.gfx.camera, this.gfx.scene);
       // decretos voadores do Trunfo colossal
       this.canetadas = new Canetadas(this.gfx.scene, this.fx);
+      // bolas de fogo: o tiro dos inimigos, proporcional a cada um
+      this.bolas = new Fireballs(this.gfx.scene, this.fx);
       // arma pesada de recarga longa: trava no alvo e persegue
       this.teleguiado = new HomingMissiles(this.gfx.scene, this.fx, 11);
       this.teleguiado.onAcerto = (foe, ponto) => this._acertarFoe(foe, ponto, 120, true);
@@ -217,6 +220,9 @@ export class Game {
         fx: this.fx,
         onFim: (fase) => this._vencerFase(fase),
         onChefeAberto: (fase) => this._soltarChefeNaCidade(fase),
+        onBola: (dono, b) => this._inimigoAtira(dono, b),
+        // chefão caiu: o que já estava no ar cai junto
+        onLimparTiros: () => { this.bolas.limpar(); this.canetadas.limpar(); },
       });
 
       // míssil é a única arma que arranha o colosso
@@ -252,9 +258,18 @@ export class Game {
 
   _wireUI() {
     // ---------------------------------------------------- [15] pointer lock
+    /*
+     * [48] Soltar o ponteiro leva ao MENU, não a uma tela de pausa.
+     *
+     * O ESC do navegador libera o cursor sozinho — não dá para
+     * interceptar. Então esse é o mesmo evento do "pausar": em vez de
+     * uma tela intermediária dizendo PAUSADO, cai direto na abertura,
+     * que já tem VOLTAR AO JOGO, as opções e o Plano à mão. Uma tela a
+     * menos no caminho de quem só queria mexer numa configuração.
+     */
     this.input.onLockChange = (locked) => {
       if (!locked && this.state === 'playing' && !this.phone.open) {
-        this.pause();                                        // [48] ESC pausa
+        this.toTitle();
       }
     };
 
@@ -269,8 +284,7 @@ export class Game {
         // (Espaço avança, Enter pula) para nunca disputar com a pausa.
         if (this.plan.aberto) { this.plan.fechar(); return; }
         if (this.phone.open) { this.phone.close(); return; }
-        if (this.state === 'playing') this.pause();
-        else if (this.state === 'paused') this.resume();
+        if (this.state === 'playing') this.toTitle();
         // [62] no menu principal com partida em andamento, ESC volta para ela
         else if (this.state === 'title' && this.hasGame) this.resumeFromTitle();
         return;
@@ -392,8 +406,6 @@ export class Game {
     // ---------------------------------------------------- botões das telas
     $('start-btn').addEventListener('click', () => { this.audio.acordar(); this.start(); });
     $('restart-btn').addEventListener('click', () => this.restart());   // [40]
-    $('resume-btn').addEventListener('click', () => this.resume());
-    $('quit-btn').addEventListener('click', () => this.toTitle());
     $('resume-title-btn').addEventListener('click', () => this.resumeFromTitle());   // [62]
   }
 
@@ -427,7 +439,6 @@ export class Game {
 
     $('title-screen').classList.add('hidden');
     $('over-screen').classList.add('hidden');
-    $('pause-screen').classList.add('hidden');
     this.hud.show(true);
     this.hud.reset();
     this.hud.setHearts(this.hearts);
@@ -454,7 +465,6 @@ export class Game {
     this.input.enabled = false;
     this.input.releaseLock();
     this.hud.show(false);
-    $('pause-screen').classList.add('hidden');
     $('over-screen').classList.add('hidden');
     $('title-screen').classList.remove('hidden');
     // o botão de retomar só aparece quando há mesmo uma partida atrás da tela
@@ -472,20 +482,12 @@ export class Game {
     this.state = 'playing';
     this.input.enabled = true;
     this.input.requestLock();
-  }
-
-  pause() {                                                   // [48]
-    if (this.state !== 'playing') return;
-    this.state = 'paused';
-    this.input.releaseLock();
-    $('pause-screen').classList.remove('hidden');
-  }
-
-  resume() {
-    if (this.state !== 'paused') return;
-    this.state = 'playing';
-    $('pause-screen').classList.add('hidden');
-    this.input.requestLock();
+    /*
+     * Devolve a trilha de onde o jogador parou. Sem isto ele voltava
+     * para o meio de uma luta de chefão ouvindo a música de abertura,
+     * que o menu tinha posto no lugar.
+     */
+    this.music.tocar(this.emFase ? 'boss' : 'saopaulo');
   }
 
   gameOver(reason, win = false) {
@@ -497,6 +499,7 @@ export class Game {
      */
     this.dialogue.cancelar();
     this.canetadas.limpar();
+    this.bolas.limpar();
     this.music.tocar(win ? 'festa' : 'gameover');
     this.audio.calarZumbido();
     if (!win) this.audio.derrota();                             // [35]
@@ -1043,6 +1046,32 @@ export class Game {
     else this.player.saci.desligar();
   }
 
+  /**
+   * Um inimigo atirou: nasce a bola de fogo, do tamanho dele.
+   *
+   * A mira aponta para onde o jogador ESTÁ, não para onde estará: é
+   * projétil burro de propósito. A bola é lenta e visível justamente
+   * para dar tempo de sair da frente — prever o movimento tiraria a
+   * única defesa que ela oferece.
+   */
+  _inimigoAtira(dono, b) {
+    const alvo = this.mode === 'heli' ? this.heli.root.position : this.player.position;
+    const p = dono.root.position;
+    const boca = (dono.alturaAlvo || 1);
+
+    const dir = new THREE.Vector3(alvo.x, alvo.y + 1.0, alvo.z)
+      .sub(new THREE.Vector3(p.x, p.y + boca, p.z))
+      .normalize();
+    // nasce fora do corpo de quem atirou, senão explode nele mesmo
+    const origem = new THREE.Vector3(p.x, p.y + boca, p.z)
+      .addScaledVector(dir, (b.raio || 0.6) + (dono.raioAcerto || 1) + 0.6);
+
+    if (this.bolas.disparar(origem, dir, {
+      raio: b.raio, vel: b.vel, dano: 1,
+      cor: b.cor ?? (dono.porte ? 0xff7a1a : 0xff4d4d),
+    })) this.audio.tiro();
+  }
+
   /** Aviso que não repete em rajada: um por tipo a cada 2,5 s. */
   _avisoUmaVez(chave, texto) {
     this._avisos = this._avisos || {};
@@ -1338,6 +1367,7 @@ export class Game {
     this.stage.abandonar();
     if (this.colosso) { this.colosso.remover(); this.colosso = null; }
     this.canetadas.limpar();
+    this.bolas.limpar();
     this.teleguiado.limpar();
     this.missiles.setFoes(null);
     this.bullets.setFoes(null);
@@ -1416,7 +1446,7 @@ export class Game {
     if (this.state === 'playing') this._updatePlaying(dt);
     else if (this.state === 'title') this._updateTitle(dt);
     else {
-      // pausado ou fim de jogo: mundo congelado, cena continua desenhada
+      // fim de jogo: mundo congelado, cena continua desenhada
       this.sky.setPaused(true);
     }
     this._somContinuo();
@@ -1619,6 +1649,13 @@ export class Game {
     const danoPapel = this.canetadas.update(dt, alvo);
     if (danoPapel > 0 && this.invuln <= 0 && !this.god && !this.dialogue.ativo) {
       this._damagePlayer('Atingido por uma canetada do Trunfo');
+    }
+
+    // bolas de fogo: mesma regra de imunidade durante a cutscene
+    const raioAlvo = this.mode === 'heli' ? 2.6 : 1.0;
+    const danoBola = this.bolas.update(dt, alvo, raioAlvo, this.col);
+    if (danoBola > 0 && this.invuln <= 0 && !this.god && !this.dialogue.ativo) {
+      this._damagePlayer('Atingido por uma bola de fogo');
     }
     this.missiles.setFoes(this.stage.foes);
     this.bullets.setFoes(this.stage.foes);
