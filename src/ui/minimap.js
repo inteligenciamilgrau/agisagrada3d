@@ -157,10 +157,17 @@ export class Minimap {
     ctx.fill();
     ctx.restore();
 
-    // ---- a rosa dos ventos acompanha a rotação (norte = -Z)
+    /*
+     * ---- a rosa dos ventos acompanha a rotação (norte = -Z)
+     *
+     * O raio vem do TAMANHO EM TELA do radar, não de um número fixo: no
+     * celular ele encolhe para 104 px e um 96 cravado no código jogaria
+     * o "N" a meio palmo de distância do mapa.
+     */
     if (this.compass) {
-      const nx = -s * 96, ny = c * 96;
-      this.compass.style.transform = `translate(-50%,-50%) translate(${nx}px, ${ny + 105}px)`;
+      const raio = (this.compass.parentElement?.clientWidth || 210) / 2;
+      const nx = -s * (raio - 9), ny = c * (raio - 9);
+      this.compass.style.transform = `translate(-50%,-50%) translate(${nx}px, ${ny + raio}px)`;
     }
   }
 

@@ -139,7 +139,16 @@ export class Player {
     let maxSpeed = input.running ? PLAYER.runSpeed : PLAYER.walkSpeed;
     if (this.inWater) maxSpeed *= 0.45;
 
-    const wanted = mag > 0.001 ? maxSpeed : 0;
+    /*
+     * A velocidade é PROPORCIONAL à deflexão do comando.
+     *
+     * No teclado isso não muda nada — W está apertado ou não, e a
+     * magnitude é sempre 1. Quem ganha é o analógico da tela: empurrar
+     * o polegar um terço do caminho faz o Bob andar devagar, que é a
+     * única coisa que separa um analógico de um direcional de quatro
+     * setas desenhado em círculo.
+     */
+    const wanted = maxSpeed * Math.min(1, mag);
     this.speed = damp(this.speed, wanted, PLAYER.accel / Math.max(1, maxSpeed), dt);
 
     /*
@@ -259,14 +268,16 @@ export class Player {
     if (mag > 0.001) { dx /= mag; dz /= mag; }
 
     const turbo = input.boosting ? PLAYER.flyBoost : 1;
-    const wanted = mag > 0.001 ? PLAYER.flySpeed * turbo : 0;
+    const wanted = PLAYER.flySpeed * turbo * Math.min(1, mag);
     this.speed = damp(this.speed, wanted, 8, dt);
     if (mag > 0.001) this._move.set(dx, 0, dz);
 
     this.pos.x += this._move.x * this.speed * dt;
     this.pos.z += this._move.z * this.speed * dt;
 
-    const sobe = (input.jumping ? 1 : 0) - (input.running ? 1 : 0);
+    // descer é comando próprio: no toque, o analógico no talo quer dizer
+    // "para a frente, depressa", não "afunda"
+    const sobe = (input.jumping ? 1 : 0) - (input.descer ? 1 : 0);
     this.vy = damp(this.vy, sobe * PLAYER.flyUpSpeed * turbo, 8, dt);
     this.pos.y += this.vy * dt;
 

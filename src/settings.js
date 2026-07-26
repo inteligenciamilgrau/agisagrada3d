@@ -3,6 +3,7 @@ import {
   RENDER_DISTANCES, DEFAULT_RENDER_DISTANCE,
 } from './config.js';
 import { VOL_EFEITOS_PADRAO, VOL_MUSICA_PADRAO } from './sys/audio.js';
+import { ACAO_POR_ID, PROIBIDAS } from './keys.js';
 
 /**
  * Preferências do jogador, guardadas no localStorage do navegador.
@@ -31,9 +32,17 @@ const PADRAO = {
   renderDistanceIndex: DEFAULT_RENDER_DISTANCE,  // alcance de renderização
   volEfeitos: Math.round(VOL_EFEITOS_PADRAO * 100),   // 0..100
   volMusica: Math.round(VOL_MUSICA_PADRAO * 100),     // 0..100
+  /**
+   * Controles na tela: 'auto' liga sozinho em celular e tablet, 'on'
+   * força (útil para conferir o layout no PC) e 'off' nunca liga.
+   */
+  toque: 'auto',
+  /** Ação -> `event.code`. Vazio significa "tudo no padrão de fábrica". */
+  teclas: {},
 };
 
 const CICLOS = ['ciclo', 'dia', 'noite'];
+const TOQUES = ['auto', 'on', 'off'];
 
 /**
  * Aceita só valores válidos. O que estiver salvo pode ter vindo de uma versão
@@ -62,21 +71,42 @@ function sanear(bruto) {
     const v = bruto[k];
     if (Number.isFinite(v) && v >= 0 && v <= 100) s[k] = Math.round(v);
   }
+  if (TOQUES.includes(bruto.toque)) s.toque = bruto.toque;
+
+  // teclas: só entra ação que existe, com tecla que é permitida
+  if (bruto.teclas && typeof bruto.teclas === 'object') {
+    s.teclas = {};
+    for (const [id, code] of Object.entries(bruto.teclas)) {
+      if (!ACAO_POR_ID[id]) continue;
+      if (typeof code !== 'string' || !code || PROIBIDAS.has(code)) continue;
+      s.teclas[id] = code;
+    }
+  }
   return s;
 }
 
 export class Settings {
   constructor() {
+    /**
+     * Primeira vez neste navegador?
+     *
+     * Serve para escolher um padrão melhor sem passar por cima de
+     * ninguém: num celular estreando o jogo vale começar em BAIXA, mas
+     * quem já escolheu ALTA da outra vez tem que reencontrar ALTA.
+     */
+    this.novo = true;
     this.data = this._carregar();
   }
 
   _carregar() {
     try {
-      return sanear(JSON.parse(localStorage.getItem(CHAVE)));
+      const bruto = localStorage.getItem(CHAVE);
+      this.novo = !bruto;
+      return sanear(JSON.parse(bruto));
     } catch {
       // localStorage pode estar indisponível (modo privado, file://).
       // Nesse caso o jogo roda igual, só não lembra entre sessões.
-      return { ...PADRAO };
+      return { ...PADRAO, teclas: {} };
     }
   }
 
@@ -98,7 +128,7 @@ export class Settings {
 
   /** Volta tudo ao padrão de fábrica. */
   reset() {
-    this.data = { ...PADRAO };
+    this.data = { ...PADRAO, teclas: {} };
     this._salvar();
     return this.data;
   }

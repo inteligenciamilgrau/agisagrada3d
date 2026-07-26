@@ -59,6 +59,19 @@ export class Phone {
     });
 
     this.el.back.addEventListener('click', () => this.showContacts());
+
+    /*
+     * Fechar sem teclado.
+     *
+     * O celular só saía com C ou ESC — teclas que não existem num
+     * celular de verdade, e ali o jogador ficava preso dentro da tela de
+     * mensagens. Agora a barrinha de baixo e o vazio em volta do
+     * aparelho fecham, que é o gesto que a mão já faz em qualquer app.
+     */
+    $('phone-home').addEventListener('click', () => this.close());
+    this.el.root.addEventListener('pointerdown', (e) => {
+      if (e.target === this.el.root) this.close();
+    });
   }
 
   // ------------------------------------------------------------------ abrir/fechar

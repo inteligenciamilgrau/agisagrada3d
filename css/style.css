@@ -18,8 +18,12 @@ body{
   margin:0; overflow:hidden; background:#05070c; color:var(--ink);
   font-family:var(--font); user-select:none; -webkit-user-select:none;
   cursor:default;
+  /* no celular: nada de "puxar para atualizar", zoom por duplo toque
+     nem aquele realce cinza que o Android pinta em cima de cada botão */
+  overscroll-behavior:none; -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
 }
-canvas#scene{position:fixed; inset:0; width:100vw; height:100vh; display:block}
+canvas#scene{position:fixed; inset:0; width:100vw; height:100vh; display:block; touch-action:none}
 .hidden{display:none !important}
 button{font-family:var(--font)}
 
@@ -299,10 +303,13 @@ button{font-family:var(--font)}
   background:var(--accent2); border:0; border-radius:10px; width:46px; color:#03121a;
   font-size:17px; cursor:pointer; font-weight:800;
 }
+/* a barrinha de baixo fecha o celular — é o gesto que a mão já conhece */
 #phone-home{
   height:5px; width:120px; background:#3a4354; border-radius:99px;
-  margin:10px auto 2px;
+  margin:10px auto 2px; cursor:pointer; flex:0 0 auto;
+  transition:background .15s;
 }
+#phone-home:hover{background:#5a6678}
 #phone-tip{font-size:11px; opacity:.5}
 
 /* ------------------------- TELAS ------------------------- */
@@ -351,15 +358,18 @@ button{font-family:var(--font)}
 }
 #tagline{margin:0 0 26px; opacity:.6; font-size:15px; letter-spacing:.4px}
 
-#controls-grid{
-  display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
-  gap:7px; margin-bottom:16px; text-align:left;
+/* atalhos da abertura para OPÇÕES e CONTROLES */
+#title-links{
+  display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:18px;
 }
-.ctl{
-  background:rgba(255,255,255,.04); border:1px solid var(--stroke); border-radius:9px;
-  padding:8px 11px; display:flex; align-items:center; gap:5px; font-size:12px;
+.menu-link{
+  background:rgba(255,255,255,.05); border:1px solid var(--stroke); color:var(--ink);
+  border-radius:10px; padding:11px 20px; font-size:12px; font-weight:800;
+  letter-spacing:1.5px; cursor:pointer; font-family:var(--font);
+  transition:background .12s, border-color .12s;
 }
-.ctl span{opacity:.7; margin-left:4px}
+.menu-link:hover{background:rgba(255,255,255,.12); border-color:var(--accent2)}
+
 kbd{
   background:#e9eef7; color:#0a0f18; border-radius:5px; padding:2px 7px;
   font-size:11px; font-weight:800; font-family:var(--font);
@@ -373,9 +383,8 @@ kbd{
 #timer-toggle input{width:17px; height:17px; accent-color:var(--accent); cursor:pointer}
 
 /* [13] seletor de iluminação e [61] de movimento na cidade */
-#cycle-choice{margin:0 0 18px}
-#pop-choice{margin:0 0 18px}
-#vol-choice{margin:0 0 24px}
+#cycle-choice, #pop-choice, #qual-choice, #dist-choice, #toque-choice{margin:0 0 18px}
+#vol-choice{margin:0 0 4px}
 .choice-note{
   display:block; margin-top:7px; font-size:10px; opacity:.35; letter-spacing:.4px;
 }
@@ -422,7 +431,9 @@ kbd{
 #reset-cfg.ghost, .ghost{
   background:transparent; color:var(--ink); border:1px solid var(--stroke);
   box-shadow:none; margin-top:10px; padding:11px 30px; font-size:13px;
+  border-radius:12px; cursor:pointer; font-weight:800; letter-spacing:1.5px;
 }
+.ghost:hover{background:rgba(255,255,255,.09)}
 #loading-note{margin-top:14px; font-size:12px; opacity:.5; height:16px}
 
 /* as preferências ficam salvas; isso volta tudo ao padrão */
@@ -434,9 +445,11 @@ kbd{
 #reset-cfg:hover{opacity:.8}
 
 #over-screen{
-  position:fixed; inset:0; z-index:45; display:flex; align-items:center; justify-content:center;
+  position:fixed; inset:0; z-index:45; display:flex; align-items:flex-start; justify-content:center;
+  padding:16px; overflow-y:auto;
   background:rgba(3,6,12,.7); backdrop-filter:blur(9px);
 }
+#over-screen .panel{margin:auto}
 .panel{
   background:var(--panel); border:1px solid var(--stroke); border-radius:20px;
   padding:40px 54px; text-align:center; box-shadow:0 30px 80px rgba(0,0,0,.6);
@@ -570,7 +583,7 @@ kbd{
   position:fixed; inset:0; z-index:47; display:flex; align-items:center; justify-content:center;
   background:rgba(3,6,12,.78); backdrop-filter:blur(10px);
 }
-.plan-panel{max-width:min(880px,94vw); padding:34px 40px}
+.plan-panel{max-width:min(880px,94vw); max-height:92vh; overflow-y:auto; padding:34px 40px}
 #plan-grid{
   display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:22px;
 }
@@ -693,5 +706,282 @@ kbd{
 /* aviso sob COMEÇAR DE NOVO: o botão é destrutivo, tem que avisar */
 #start-warn{
   font-size:10px; letter-spacing:1px; color:var(--bad);
-  opacity:.85; margin-top:-14px; margin-bottom:10px;
+  opacity:.85; margin-top:8px;
+}
+
+/* ============================================================
+   TELAS DE OPÇÕES E CONTROLES
+   ------------------------------------------------------------
+   As duas saíram de dentro da abertura. Ficam por cima dela (z acima
+   de #title-screen) porque é de lá que se chega às duas — e o ESC
+   fecha o painel antes de voltar ao jogo.
+   ============================================================ */
+#options-screen, #keys-screen{
+  position:fixed; inset:0; z-index:52; display:flex;
+  align-items:flex-start; justify-content:center; padding:16px;
+  overflow-y:auto; overflow-x:hidden;
+  background:rgba(3,6,12,.74); backdrop-filter:blur(10px);
+}
+.menu-panel{
+  width:min(640px,96vw); margin:auto; padding:28px 30px;
+  max-height:none;
+}
+.menu-panel h2{font-size:26px; letter-spacing:2px; margin-bottom:14px}
+.menu-actions{
+  display:flex; gap:12px; align-items:center; justify-content:center;
+  flex-wrap:wrap; margin-top:22px; border-top:1px solid var(--stroke); padding-top:18px;
+}
+.menu-actions .ghost{margin-top:0}
+.menu-actions #reset-cfg, .menu-actions #keys-reset{
+  margin:0; background:none; border:0; color:var(--ink); opacity:.4;
+  font-size:11px; letter-spacing:.6px; text-decoration:underline;
+  cursor:pointer; padding:4px; font-family:var(--font);
+}
+.menu-actions #reset-cfg:hover, .menu-actions #keys-reset:hover{opacity:.85}
+
+/* ---------------------- lista de teclas ---------------------- */
+#keys-note{margin-bottom:6px}
+#keys-note.alerta{color:var(--bad); opacity:1}
+#keys-list, #keys-touch{text-align:left}
+.keys-group{
+  font-size:9px; letter-spacing:2px; opacity:.45; font-weight:800;
+  margin:18px 0 6px; border-bottom:1px solid var(--stroke); padding-bottom:6px;
+}
+.keys-row{
+  display:flex; align-items:center; gap:12px; padding:4px 2px;
+}
+.keys-name{flex:1 1 auto; font-size:12.5px; opacity:.85; line-height:1.3}
+.keys-tag{font-size:11px; opacity:.5; text-align:right; flex:0 1 auto}
+.keys-bind{
+  flex:0 0 auto; min-width:88px;
+  background:#e9eef7; color:#0a0f18; border:0; border-radius:6px;
+  padding:7px 10px; font-family:var(--font); font-size:11.5px; font-weight:800;
+  letter-spacing:1px; cursor:pointer; box-shadow:0 2px 0 #97a1b3;
+}
+.keys-bind:hover{background:#fff}
+/* tecla mudada em relação ao padrão: dá para ver o que foi mexido */
+.keys-bind.trocada{background:linear-gradient(180deg,#ffd580,var(--accent))}
+.keys-bind.esperando{
+  background:var(--accent2); color:#03121a; box-shadow:0 2px 0 #1892b3;
+  animation:urg 1s infinite;
+}
+/* a legenda do celular só interessa a quem está no celular */
+#keys-touch{display:none}
+body.toque #keys-touch{display:block}
+
+/* ============================================================
+   CONTROLES NA TELA (celular)
+   ============================================================ */
+#touch{position:fixed; inset:0; z-index:20; touch-action:none; user-select:none}
+#tc-look{position:absolute; inset:0; touch-action:none}
+
+/* ---------------------- analógico ---------------------- */
+/*
+ * A ZONA é grande e invisível; a base é só o desenho. O dedo pousa em
+ * qualquer lugar do canto de baixo à esquerda e o analógico nasce ali —
+ * quem joga no celular não olha para o próprio polegar.
+ */
+#tc-stick-zone{
+  position:absolute; left:0; bottom:0;
+  width:min(46%,420px); height:min(62%,340px); touch-action:none;
+}
+#tc-base{
+  position:absolute; width:132px; height:132px; margin:-66px 0 0 -66px;
+  left:calc(96px + env(safe-area-inset-left));
+  top:calc(100% - 96px - env(safe-area-inset-bottom));
+  border-radius:50%; border:2px solid rgba(255,255,255,.22);
+  background:radial-gradient(circle, rgba(8,12,20,.45), rgba(8,12,20,.18));
+  opacity:.45; transition:opacity .15s;
+  box-shadow:0 6px 24px rgba(0,0,0,.4);
+}
+#tc-base.on{opacity:.95}
+/* no talo o anel acende: o jogador vê que passou a correr [30] */
+#tc-base.correndo{
+  border-color:var(--accent); box-shadow:0 0 0 2px rgba(255,176,32,.35), 0 6px 24px rgba(0,0,0,.4);
+}
+#tc-knob{
+  position:absolute; left:50%; top:50%; width:58px; height:58px;
+  transform:translate(-50%,-50%); border-radius:50%;
+  background:linear-gradient(180deg,rgba(255,255,255,.85),rgba(190,205,225,.6));
+  border:1px solid rgba(255,255,255,.6);
+  box-shadow:0 4px 14px rgba(0,0,0,.55);
+}
+#tc-base.correndo #tc-knob{
+  background:linear-gradient(180deg,#ffd580,var(--accent));
+}
+
+/* aviso de orientação: mora dentro de #touch, então já herda "só
+   enquanto se joga" — no menu ele seria só barulho */
+#tc-rotate{
+  position:absolute; left:50%; top:44%; transform:translate(-50%,-50%);
+  display:none; pointer-events:none; text-align:center;
+  background:rgba(8,12,20,.86); border:1px solid var(--stroke);
+  border-radius:999px; padding:9px 18px; font-size:12px; font-weight:700;
+}
+@media (orientation:portrait){ body.toque #tc-rotate{display:block} }
+
+/* ---------------------- botões de cima ---------------------- */
+#tc-top{
+  position:absolute; display:flex; gap:8px;
+  right:calc(10px + env(safe-area-inset-right));
+  top:calc(8px + env(safe-area-inset-top));
+}
+.tc-icon{
+  pointer-events:auto; touch-action:none;
+  width:42px; height:42px; border-radius:12px; font-size:18px; line-height:1;
+  border:1px solid var(--stroke); background:rgba(8,12,20,.66); color:var(--ink);
+  backdrop-filter:blur(6px); cursor:pointer; padding:0;
+}
+.tc-icon.press{background:rgba(37,208,255,.3); border-color:var(--accent2)}
+
+/* ---------------------- botões de ação ---------------------- */
+/*
+ * O mínimo que dá para jogar: atirar, pular e agir. Os outros três
+ * (descer, visão, míssil) só existem quando existe o que fazer com
+ * eles — dentro do veículo ou no meio de uma fase.
+ */
+#tc-pad{
+  position:absolute; width:264px; height:200px; pointer-events:none;
+  right:env(safe-area-inset-right); bottom:env(safe-area-inset-bottom);
+}
+.tc-btn{
+  position:absolute; pointer-events:auto; touch-action:none;
+  border-radius:50%; padding:0; cursor:pointer;
+  border:2px solid rgba(255,255,255,.26); background:rgba(10,15,24,.4);
+  color:var(--ink); font-family:var(--font); font-weight:900; letter-spacing:.6px;
+  backdrop-filter:blur(6px); box-shadow:0 4px 16px rgba(0,0,0,.4);
+  transition:transform .07s, background .07s;
+}
+.tc-btn.press{transform:scale(.92); background:rgba(255,255,255,.26)}
+.tc-fogo{
+  right:16px; bottom:20px; width:94px; height:94px; font-size:13px;
+  border-color:rgba(255,77,77,.6); background:rgba(255,77,77,.24); color:#ffdede;
+}
+.tc-fogo.press{background:rgba(255,77,77,.55)}
+.tc-pular{right:118px; bottom:88px; width:70px; height:70px; font-size:11.5px}
+.tc-acao{
+  right:122px; bottom:14px; width:66px; height:66px; font-size:11.5px;
+  border-color:rgba(255,176,32,.6); background:rgba(255,176,32,.2); color:#ffe0a8;
+}
+.tc-acao.press{background:rgba(255,176,32,.5)}
+.tc-sec{width:52px; height:52px; font-size:17px; font-weight:700}
+.tc-missil{right:26px; bottom:128px}
+.tc-visao{right:198px; bottom:98px}
+.tc-descer{right:198px; bottom:24px}
+
+/* telas curtas (celular deitado): o conjunto encolhe junto */
+@media (max-height:430px){
+  #tc-pad{transform:scale(.84); transform-origin:100% 100%}
+  #tc-base{width:112px; height:112px; margin:-56px 0 0 -56px;
+    left:calc(82px + env(safe-area-inset-left)); top:calc(100% - 82px - env(safe-area-inset-bottom))}
+  #tc-knob{width:50px; height:50px}
+}
+
+/* ============================================================
+   HUD no modo toque: tudo sai do caminho dos dedos
+   ------------------------------------------------------------
+   Canto de baixo à esquerda é do analógico, canto de baixo à direita é
+   dos botões. Sobra o alto da tela — e é para lá que o HUD se muda.
+   ============================================================ */
+body.toque #perfbox{
+  left:calc(10px + env(safe-area-inset-left)); top:calc(8px + env(safe-area-inset-top));
+  transform:none; padding:3px 10px; font-size:11px;
+}
+body.toque #clockbox{display:none}
+body.toque #topleft{
+  left:calc(10px + env(safe-area-inset-left)); top:calc(40px + env(safe-area-inset-top)); gap:6px;
+}
+body.toque #hearts{gap:4px}
+body.toque .heart{width:19px; height:19px}
+body.toque .stat{min-width:58px; padding:3px 9px; border-radius:8px}
+body.toque .stat-label{font-size:7px; letter-spacing:1px}
+body.toque .stat-value{font-size:14px}
+
+body.toque #objective{
+  left:calc(10px + env(safe-area-inset-left)); right:auto;
+  top:calc(112px + env(safe-area-inset-top));
+  min-width:0; max-width:44vw; padding:6px 10px; gap:8px;
+}
+body.toque #objective-icon{font-size:17px}
+body.toque #objective-title{font-size:8px; letter-spacing:1.4px}
+body.toque #objective-text{font-size:11px}
+body.toque #objective-dist{font-size:10px}
+
+body.toque #minimap-wrap{
+  right:calc(10px + env(safe-area-inset-right)); top:calc(58px + env(safe-area-inset-top));
+  bottom:auto; width:104px; height:104px;
+}
+body.toque #compass-n{font-size:9px}
+
+body.toque #missile-gauge{
+  right:calc(10px + env(safe-area-inset-right)); top:calc(172px + env(safe-area-inset-top));
+  bottom:auto; width:104px;
+}
+
+/* velocímetro e painel do helicóptero vão para o rodapé central,
+   o único pedaço de baixo que não tem dedo em cima */
+body.toque #speedo{
+  right:auto; left:50%; margin-left:-58px; width:116px; height:116px;
+  bottom:calc(2px + env(safe-area-inset-bottom));
+}
+body.toque #speedo-value{font-size:25px}
+body.toque #speedo-unit{font-size:8px}
+body.toque #gear{font-size:11px}
+body.toque #heli-panel{
+  right:auto; left:50%; transform:translateX(-50%); min-width:126px; padding:6px 11px;
+  bottom:calc(4px + env(safe-area-inset-bottom));
+}
+body.toque .heli-row{font-size:9px}
+body.toque .heli-row b{font-size:16px}
+body.toque .heli-arm b{font-size:10px}
+
+/* a dica sobe para acima da mira: embaixo é tudo botão */
+body.toque #prompt{
+  bottom:auto; top:25%; font-size:12px; padding:7px 14px;
+  max-width:66vw; white-space:normal; text-align:center;
+}
+body.toque #carrying{bottom:auto; top:19%; font-size:10px; padding:5px 14px}
+body.toque #boss-bar{top:calc(6px + env(safe-area-inset-top)); width:min(400px,44vw)}
+body.toque #boss-name{font-size:12px; letter-spacing:2px; margin-bottom:4px}
+body.toque #boss-track{height:11px}
+body.toque #boss-phase{font-size:9px; margin-top:3px}
+body.toque #phase-title{font-size:26px}
+body.toque #phase-flag{font-size:42px}
+body.toque #game-title{font-size:clamp(30px,6.4vw,60px); letter-spacing:-2px}
+body.toque #tagline{font-size:13px; margin-bottom:20px}
+
+/* botão de pular a cena — no toque não há tecla F para isso */
+#dlg-skip{
+  position:absolute; right:16px; bottom:16px; display:none;
+  background:rgba(255,255,255,.1); border:1px solid var(--stroke); color:var(--ink);
+  border-radius:999px; padding:10px 18px; font-family:var(--font);
+  font-size:11px; font-weight:800; letter-spacing:1.5px; cursor:pointer;
+}
+body.toque #dlg-skip{display:block}
+body.toque #dlg-portrait{width:clamp(78px,11vw,120px); height:clamp(78px,11vw,120px)}
+body.toque #dlg-text{font-size:clamp(15px,2vw,24px)}
+
+/* ============================================================
+   Telas estreitas ou baixas (celular deitado, janela pequena)
+   ============================================================ */
+@media (max-width:760px), (max-height:560px){
+  .panel{padding:24px 20px; border-radius:16px}
+  .panel h2{font-size:26px}
+  .menu-panel{padding:22px 18px}
+  #over-stats{gap:20px; margin-bottom:20px}
+  #over-stats b{font-size:26px}
+  #start-btn, #restart-btn, #resume-title-btn{padding:14px 34px; font-size:15px}
+  .plan-panel{padding:22px 18px}
+  .keys-name{font-size:12px}
+
+  /* [56] o celular do jogo cabe no celular de verdade */
+  #phone-body{
+    width:min(330px,92vw); height:min(660px,86vh);
+    border-radius:30px; padding:9px;
+  }
+  #phone-screen{border-radius:22px}
+  #phone-header{padding:12px 14px 9px}
+  #phone-notch{display:none}
+  #phone-home{margin:7px auto 0}
+  #phone-tip{font-size:10px}
 }

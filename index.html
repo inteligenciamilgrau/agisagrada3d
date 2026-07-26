@@ -2,7 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<!-- viewport-fit=cover: no celular com entalhe, o jogo vai até a borda;
+     o HUD se protege com env(safe-area-inset-*) no CSS -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Bob em Busca da AGI Sagrada 3D</title>
 <meta name="description" content="Cruzada 3D estilo GTA numa cidade brasileira: Bob e a comunidade Inteligência Mil Grau recuperam os 5 Fragmentos do Cálice de Silício das mãos das Big Techs para treinar o CURUPIRA-1, a primeira AGI verde-amarela.">
 <meta name="color-scheme" content="dark">
@@ -94,7 +99,7 @@
     <div class="heli-row"><span>ALT</span><b id="heli-alt">0</b><span>m</span></div>
     <div class="heli-row"><span>VEL</span><b id="heli-spd">0</b><span>km/h</span></div>
     <!-- [63] no ar, o E/clique dispara míssil no lugar da pistola -->
-    <div class="heli-row heli-arm"><span>ARM</span><b>MÍSSEIS</b><span>E / clique</span></div>
+    <div class="heli-row heli-arm"><span>ARM</span><b>MÍSSEIS</b><span id="heli-arm-key">E / clique</span></div>
     <div id="heli-warn">DESÇA PARA SAIR</div>
   </div>
 
@@ -155,6 +160,8 @@
     <div id="dlg-text"></div>
     <div id="dlg-hint" class="hidden"><kbd>Espaço</kbd> continuar · <kbd>F</kbd> pular a cena</div>
   </div>
+  <!-- no toque a fala avança tocando em qualquer lugar; este botão é a saída -->
+  <button id="dlg-skip" type="button">PULAR CENA</button>
 </div>
 
 <!-- ==================== AGI SAGRADA: o Plano (tecla J) ==================== -->
@@ -202,33 +209,35 @@
 </div>
 
 <!-- ==================== [39] TELA DE ABERTURA ==================== -->
+<!--
+  A abertura tem UMA pergunta: jogar. Tudo o que não responde a ela
+  (as vinte teclas de atalho, os seletores de qualidade, os volumes)
+  saiu daqui para as telas de OPÇÕES e CONTROLES, logo abaixo.
+-->
 <div id="title-screen">
   <div id="title-bg"></div>
   <div id="title-content">
     <h1 id="game-title"><span>BOB</span> EM BUSCA DA <b>AGI SAGRADA</b> <em>3D</em></h1>
     <p id="tagline">Bob e a comunidade Mil Grau contra as Big Techs. Recupere os 5 Fragmentos e treine o CURUPIRA-1.</p>
 
-    <div id="controls-grid">
-      <div class="ctl"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Mover</span></div>
-      <div class="ctl"><kbd>Mouse</kbd><span>Olhar</span></div>
-      <div class="ctl"><kbd>Scroll</kbd><span>Zoom</span></div>
-      <div class="ctl"><kbd>Shift</kbd><span>Correr</span></div>
-      <div class="ctl"><kbd>Espaço</kbd><span>Pular</span></div>
-      <div class="ctl"><kbd>F</kbd><span>Entrar na fase / no veículo</span></div>
-      <div class="ctl"><kbd>J</kbd><span>O Plano da AGI</span></div>
-      <div class="ctl"><kbd>V</kbd><span>Câmera interna / externa</span></div>
-      <div class="ctl"><kbd>E</kbd><kbd>Clique</kbd><span>Atirar</span></div>
-      <div class="ctl"><kbd>X</kbd><span>Míssil teleguiado</span></div>
-      <div class="ctl"><kbd>C</kbd><span>Celular</span></div>
-      <div class="ctl"><kbd>G</kbd><span>Qualidade gráfica</span></div>
-      <div class="ctl"><kbd>L</kbd><span>Alcance de renderização</span></div>
-      <div class="ctl"><kbd>O</kbd><span>Mudo (liga/desliga o som)</span></div>
-      <div class="ctl"><kbd>N</kbd><span>Dia / noite / ciclo</span></div>
-      <div class="ctl"><kbd>P</kbd><span>Movimento na cidade</span></div>
-      <!-- [60] voar / [61] movimento na cidade -->
-      <div class="ctl"><kbd>M</kbd><span>Modo Deus (voar)</span></div>
-      <div class="ctl"><kbd>ESC</kbd><span>Voltar a este menu</span></div>
+    <!-- [62] só aparece quando existe uma partida em andamento por trás do menu -->
+    <button id="resume-title-btn" class="hidden">VOLTAR AO JOGO</button>
+    <button id="start-btn">INICIAR JOGO</button>
+    <div id="start-warn" class="hidden">apaga o Plano da AGI e recomeça do zero</div>
+
+    <div id="title-links">
+      <button id="open-options" type="button" class="menu-link">⚙️ OPÇÕES</button>
+      <button id="open-keys" type="button" class="menu-link">🎮 CONTROLES</button>
     </div>
+
+    <div id="loading-note">carregando cidade...</div>
+  </div>
+</div>
+
+<!-- ==================== OPÇÕES ==================== -->
+<div id="options-screen" class="hidden">
+  <div class="panel menu-panel">
+    <h2>OPÇÕES</h2>
 
     <!-- [8] desmarcado por padrão: o jogo começa sem limite de tempo -->
     <label id="timer-toggle">
@@ -258,6 +267,36 @@
       <span class="choice-note">mais gente e mais carros custam FPS</span>
     </div>
 
+    <div id="qual-choice">
+      <span class="choice-label">QUALIDADE GRÁFICA</span>
+      <div class="choice-group" id="qual-group">
+        <button type="button" class="choice" data-qual="0">BAIXA</button>
+        <button type="button" class="choice active" data-qual="1">MÉDIA</button>
+        <button type="button" class="choice" data-qual="2">ALTA</button>
+      </div>
+      <span class="choice-note">no celular, BAIXA é o que segura os 30 FPS</span>
+    </div>
+
+    <div id="dist-choice">
+      <span class="choice-label">ALCANCE DE RENDERIZAÇÃO</span>
+      <div class="choice-group" id="dist-group">
+        <button type="button" class="choice" data-dist="0">CURTA</button>
+        <button type="button" class="choice" data-dist="1">MÉDIA</button>
+        <button type="button" class="choice active" data-dist="2">LONGA</button>
+        <button type="button" class="choice" data-dist="3">TOTAL</button>
+      </div>
+    </div>
+
+    <div id="toque-choice">
+      <span class="choice-label">CONTROLES NA TELA</span>
+      <div class="choice-group" id="toque-group">
+        <button type="button" class="choice active" data-toque="auto">AUTOMÁTICO</button>
+        <button type="button" class="choice" data-toque="on">SEMPRE</button>
+        <button type="button" class="choice" data-toque="off">NUNCA</button>
+      </div>
+      <span class="choice-note">automático: ligam sozinhos em celular e tablet</span>
+    </div>
+
     <div id="vol-choice">
       <span class="choice-label">SOM</span>
       <div class="slider-row">
@@ -272,13 +311,34 @@
       </div>
     </div>
 
-    <!-- [62] só aparece quando existe uma partida em andamento por trás do menu -->
-    <button id="resume-title-btn" class="hidden">VOLTAR AO JOGO</button>
-    <button id="start-btn">INICIAR JOGO</button>
-    <div id="start-warn" class="hidden">apaga o Plano da AGI e recomeça do zero</div>
-    <div id="loading-note">carregando cidade...</div>
-    <!-- as escolhas acima ficam salvas no navegador -->
-    <button id="reset-cfg" type="button">restaurar padrões</button>
+    <div class="menu-actions">
+      <button id="options-close" class="ghost">FECHAR</button>
+      <!-- as escolhas acima ficam salvas no navegador -->
+      <button id="reset-cfg" type="button">restaurar padrões</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CONTROLES / CONFIG DE TECLAS ==================== -->
+<div id="keys-screen" class="hidden">
+  <div class="panel menu-panel">
+    <h2>CONTROLES</h2>
+    <p id="keys-note" class="muted">Clique numa tecla e aperte a nova.</p>
+
+    <div id="keys-list"></div>
+
+    <div id="keys-touch">
+      <div class="keys-group">NO CELULAR</div>
+      <div class="keys-row"><span class="keys-name">Andar e correr</span><span class="keys-tag">analógico (empurre até o fim para correr)</span></div>
+      <div class="keys-row"><span class="keys-name">Olhar em volta · zoom</span><span class="keys-tag">arrastar na tela · dois dedos</span></div>
+      <div class="keys-row"><span class="keys-name">Atirar · pular · agir</span><span class="keys-tag">botões à direita</span></div>
+      <div class="keys-row"><span class="keys-name">Menu · Plano · celular</span><span class="keys-tag">☰ 📋 📱 no alto da tela</span></div>
+    </div>
+
+    <div class="menu-actions">
+      <button id="keys-close" class="ghost">FECHAR</button>
+      <button id="keys-reset" type="button">restaurar teclas padrão</button>
+    </div>
   </div>
 </div>
 
@@ -295,6 +355,38 @@
     </div>
     <!-- [40] botão de reiniciar -->
     <button id="restart-btn">JOGAR NOVAMENTE</button>
+  </div>
+</div>
+
+<!-- ==================== CONTROLES NA TELA (celular) ==================== -->
+<!--
+  A ordem importa: a área de olhar é a camada de baixo e ocupa a tela
+  inteira; a zona do analógico e os botões ficam por cima e capturam o
+  dedo antes dela. Assim qualquer canto livre da tela gira a câmera.
+-->
+<div id="touch" class="hidden">
+  <div id="tc-look"></div>
+
+  <!-- só aparece em pé: deitado, o jogo tem o dobro de campo de visão -->
+  <div id="tc-rotate">🔄 vire o celular para jogar deitado</div>
+
+  <div id="tc-stick-zone">
+    <div id="tc-base"><div id="tc-knob"></div></div>
+  </div>
+
+  <div id="tc-top">
+    <button type="button" class="tc-icon" data-acao="menu" title="Menu">☰</button>
+    <button type="button" class="tc-icon" data-acao="plano" title="O Plano da AGI">📋</button>
+    <button type="button" class="tc-icon" data-acao="celular" title="Celular">📱</button>
+  </div>
+
+  <div id="tc-pad">
+    <button type="button" class="tc-btn tc-fogo"  id="tc-fogo"   data-segura="atirar">ATIRAR</button>
+    <button type="button" class="tc-btn tc-pular" id="tc-pular"  data-segura="pular">PULAR</button>
+    <button type="button" class="tc-btn tc-acao"  id="tc-acao"   data-acao="acao">AÇÃO</button>
+    <button type="button" class="tc-btn tc-sec tc-descer hidden" id="tc-descer" data-segura="correr">▼</button>
+    <button type="button" class="tc-btn tc-sec tc-visao hidden"  id="tc-visao"  data-acao="visao">👁</button>
+    <button type="button" class="tc-btn tc-sec tc-missil hidden" id="tc-missil" data-acao="missil">🚀</button>
   </div>
 </div>
 

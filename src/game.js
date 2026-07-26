@@ -30,6 +30,9 @@ import { HUD } from './ui/hud.js';
 import { Minimap } from './ui/minimap.js';
 import { Phone } from './ui/phone.js';
 import { Settings } from './settings.js';
+import { Keybinds } from './keys.js';
+import { KeysScreen } from './ui/keysscreen.js';
+import { TouchControls, ehToque } from './ui/touch.js';
 
 // ---- campanha: Bob em Busca da AGI Sagrada
 import { carregarCampanha, salvarCampanha, zerarCampanha, proximaFase } from './story/story.js';
@@ -64,12 +67,17 @@ export class Game {
     // preferências salvas: precisam existir antes da construção do mundo,
     // que já nasce com a quantidade de NPCs do perfil escolhido
     this.settings = new Settings();
+    this._padroesDeCelular();
+
+    /** O aparelho é de toque, e o jogador não mandou o contrário? */
+    this.toque = false;
 
     this.gfx = new Graphics(canvas);
     this.col = new CollisionWorld();
     this.col.terrainFn = terrainHeight;
 
-    this.input = new Input(canvas);
+    this.binds = new Keybinds(this.settings);
+    this.input = new Input(canvas, this.binds);
 
     /*
      * ---- campanha da AGI Sagrada ----
@@ -189,6 +197,8 @@ export class Game {
       this.hud = new HUD();
       this.minimap = new Minimap($('minimap'), this.city, $('compass-n'));  // [10]
       this.phone = new Phone(this.peds);                                    // [56]
+      this.keys = new KeysScreen(this.binds);        // tela de config de teclas
+      this.touch = new TouchControls(this.input);    // analógico e botões na tela
 
       this._wireUI();
       this._applySettings();
@@ -248,6 +258,21 @@ export class Game {
     });
   }
 
+  /**
+   * Estreando num celular: começa leve.
+   *
+   * MÉDIA com a cidade movimentada é o padrão certo num PC e é um
+   * slideshow num aparelho de bolso — e quem abre o jogo no ônibus não
+   * vai adivinhar que precisa entrar nas opções antes de julgar. Só vale
+   * na PRIMEIRA vez: escolha feita é escolha respeitada.
+   */
+  _padroesDeCelular() {
+    if (!this.settings.novo || !ehToque()) return;
+    this.settings.set('presetIndex', 0);            // BAIXA
+    this.settings.set('populationIndex', 0);        // POUCA
+    this.settings.set('renderDistanceIndex', 0);    // CURTA
+  }
+
   /** Aplica as preferências salvas na interface e no mundo. */
   _applySettings() {
     this.presetIndex = this.settings.get('presetIndex');
@@ -256,7 +281,52 @@ export class Game {
     this.applyVolume(this.settings.get('volEfeitos'), this.settings.get('volMusica'));
     this.applyPopulation(this.settings.get('populationIndex'));  // [61]
     this.setDayNight(this.settings.get('cycleMode'));         // [13]
+    this.applyToque(this.settings.get('toque'));
     $('timer-enabled').checked = this.settings.get('timerEnabled');   // [8]
+  }
+
+  /**
+   * Liga ou desliga os controles na tela.
+   *
+   * @param {'auto'|'on'|'off'} modo
+   */
+  applyToque(modo) {
+    const m = ['auto', 'on', 'off'].includes(modo) ? modo : 'auto';
+    this.settings.set('toque', m);
+    this.toque = m === 'on' || (m === 'auto' && ehToque());
+
+    for (const btn of document.querySelectorAll('#toque-group .choice')) {
+      btn.classList.toggle('active', btn.dataset.toque === m);
+    }
+    if (this.touch) this.touch.ativar(this.toque);
+    this._atualizarRotulos();
+
+    // com o dedo não há ponteiro para prender [15]
+    if (this.toque) this.input.releaseLock();
+  }
+
+  /**
+   * Reescreve toda dica que cita uma tecla.
+   *
+   * São textos espalhados pelo HTML — a fala da cutscene, o painel do
+   * helicóptero, o medidor do míssil, o rodapé do celular. Ficavam
+   * cravados em F, X e C, o que virou mentira duas vezes: quando o
+   * jogador remapeia, e quando ele está num celular, onde não existe
+   * tecla nenhuma. Um lugar só reescreve todos.
+   */
+  _atualizarRotulos() {
+    const t = (id) => this._tecla(id);
+
+    $('dlg-hint').innerHTML = this.toque
+      ? 'toque na tela para continuar'
+      : `${t('pular')} continuar · ${t('acao')} pular a cena`;
+
+    $('mg-label').innerHTML = `MÍSSIL ${t('missil')}`;
+    $('heli-arm-key').innerHTML = this.toque ? 'ATIRAR' : `${this.binds.rotulo('atirar')} / clique`;
+    $('plan-close').textContent = this.toque ? 'FECHAR' : `FECHAR (${this.binds.rotulo('acao')})`;
+    $('phone-tip').textContent = this.toque
+      ? 'toque fora do aparelho para fechar'
+      : `${this.binds.rotulo('celular')} ou ESC para fechar`;
   }
 
   _wireUI() {
@@ -277,14 +347,22 @@ export class Game {
     };
 
     this.canvas.addEventListener('mousedown', () => {
+      if (this.toque) return;               // no celular não há ponteiro para prender
       if (this.state === 'playing' && !this.phone.open) this.input.requestLock();
     });
 
-    // ---------------------------------------------------- teclas de ação
-    this.input.onKey = (code) => {
-      if (code === 'Escape') {
+    // ---------------------------------------------------- ações (teclado e toque)
+    /*
+     * Chega AÇÃO, não tecla: 'acao', 'atirar', 'pular'. Quem traduziu foi
+     * o `Keybinds` — e é por isso que o mesmo bloco atende o teclado
+     * remapeado e os botões da tela sem uma linha a mais.
+     */
+    this.input.onAcao = (a) => {
+      if (a === 'menu') {
         // ESC é do MENU, sempre. A cutscene tem teclas próprias
-        // (Espaço avança, Enter pula) para nunca disputar com a pausa.
+        // (Espaço avança, F pula) para nunca disputar com a pausa.
+        if (this.keys.aberto) { this.keys.fechar(); return; }
+        if (this._opcoesAbertas) { this._abrirOpcoes(false); return; }
         if (this.plan.aberto) { this.plan.fechar(); return; }
         if (this.phone.open) { this.phone.close(); return; }
         if (this.state === 'playing') this.toTitle();
@@ -310,41 +388,55 @@ export class Game {
        * pular — ou pular quando quisesse pausar.
        */
       if (this.dialogue.ativo) {
-        if (code === 'Space') this.dialogue.avancar();
-        else if (code === 'KeyF') this.dialogue.pular();
+        if (a === 'pular') this.dialogue.avancar();
+        else if (a === 'acao') this.dialogue.pular();
         return;
       }
 
-      if (code === 'KeyJ') { this.plan.alternar(); return; }  // o Plano da AGI
-      // com o Plano aberto, F fecha também: é a tecla que a mão já está
-      // usando para tudo (entrar em fase, pular fala), então fechar com
+      if (a === 'plano') { this.plan.alternar(); return; }    // o Plano da AGI
+      // com o Plano aberto, a tecla de ação fecha também: é a que a mão já
+      // está usando para tudo (entrar em fase, pular fala), então fechar com
       // ela é o reflexo — e nada mais responde enquanto o quadro está na tela
       if (this.plan.aberto) {
-        if (code === 'KeyF') this.plan.fechar();
+        if (a === 'acao') this.plan.fechar();
         return;
       }
 
-      if (code === 'KeyC') { this.phone.toggle(); return; }   // [56]
+      if (a === 'celular') { this.phone.toggle(); return; }   // [56]
       if (this.phone.open) return;
 
-      // F entra na fase quando há portal por perto; senão é o veículo [9]
-      if (code === 'KeyF' && this.mode === 'foot') {
+      // a ação entra na fase quando há portal por perto; senão é o veículo [9]
+      if (a === 'acao' && this.mode === 'foot') {
         if (this.emFase) { this._sairDaFase(false); return; }
         const p = this.portais && this.portais.disponivel;
         if (p) { this._entrarNaFase(p.fase); return; }
       }
-      if (code === 'KeyF') this._toggleVehicle();             // [9][43]
-      if (code === 'KeyV') this._toggleView();                // [25]
-      if (code === 'KeyE') this._shoot();                     // [27]
-      if (code === 'KeyT') this._toggleTimer();               // [8]
-      if (code === 'KeyG') this.cyclePreset();                // qualidade gráfica
-      if (code === 'KeyN') this.cycleDayNight();              // [13] iluminação
-      if (code === 'KeyP') this.cyclePopulation();            // [61] movimento na cidade
-      if (code === 'KeyX') this._dispararTeleguiado();       // míssil teleguiado
-      if (code === 'KeyO') this.toggleMudo();                 // mudo geral
-      if (code === 'KeyL') this.cycleRenderDistance();   // alcance de renderização
-      if (code === 'KeyM') this.toggleGod();                  // [60] modo Deus
+      if (a === 'acao') this._toggleVehicle();                // [9][43]
+      if (a === 'visao') this._toggleView();                  // [25]
+      if (a === 'atirar') this._shoot();                      // [27]
+      if (a === 'tempo') this._toggleTimer();                 // [8]
+      if (a === 'graficos') this.cyclePreset();               // qualidade gráfica
+      if (a === 'luz') this.cycleDayNight();                  // [13] iluminação
+      if (a === 'gente') this.cyclePopulation();              // [61] movimento na cidade
+      if (a === 'missil') this._dispararTeleguiado();         // míssil teleguiado
+      if (a === 'som') this.toggleMudo();                     // mudo geral
+      if (a === 'alcance') this.cycleRenderDistance();        // alcance de renderização
+      if (a === 'deus') this.toggleGod();                     // [60] modo Deus
     };
+
+    // ---------------------------------------------------- cutscene no toque
+    /*
+     * Sem teclado, a fala avança tocando em QUALQUER lugar da tela — e o
+     * botão de pular fica num canto, longe do polegar que avança, para
+     * ninguém queimar a cena sem querer.
+     */
+    $('dialogue').addEventListener('pointerdown', () => {
+      if (this.toque && this.dialogue.ativo) this.dialogue.avancar();
+    });
+    $('dlg-skip').addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      if (this.dialogue.ativo) this.dialogue.pular();
+    });
 
     // ---------------------------------------------------- [13] seletor da abertura
     for (const btn of document.querySelectorAll('#cycle-group .choice')) {
@@ -366,6 +458,23 @@ export class Game {
       btn.addEventListener('click', () => this.applyPopulation(Number(btn.dataset.pop)));
     }
 
+    /*
+     * Qualidade, alcance e controles de toque também viram botão.
+     *
+     * As teclas G e L continuam valendo, mas no celular não existe
+     * teclado: um ajuste que só se alcança por atalho é um ajuste que
+     * metade dos jogadores nunca vai ter.
+     */
+    for (const btn of document.querySelectorAll('#qual-group .choice')) {
+      btn.addEventListener('click', () => this.applyPreset(Number(btn.dataset.qual)));
+    }
+    for (const btn of document.querySelectorAll('#dist-group .choice')) {
+      btn.addEventListener('click', () => this.applyRenderDistance(Number(btn.dataset.dist)));
+    }
+    for (const btn of document.querySelectorAll('#toque-group .choice')) {
+      btn.addEventListener('click', () => this.applyToque(btn.dataset.toque));
+    }
+
     // ---------------------------------------------------- [8] limite de tempo
     $('timer-enabled').addEventListener('change', (e) => {
       this.settings.set('timerEnabled', e.target.checked);
@@ -374,8 +483,20 @@ export class Game {
     // ---------------------------------------------------- restaurar padrões
     $('reset-cfg').addEventListener('click', () => {
       this.settings.reset();
+      // as teclas fazem parte do "padrão": deixá-las de fora daria um
+      // reset pela metade, com o jogo dizendo que voltou ao normal e o
+      // pulo ainda no lugar errado
+      this.binds.reset();
       this._applySettings();
+      this.keys.render();
     });
+
+    // ---------------------------------------------------- telas do menu
+    $('open-options').addEventListener('click', () => this._abrirOpcoes(true));
+    $('options-close').addEventListener('click', () => this._abrirOpcoes(false));
+    $('open-keys').addEventListener('click', () => this.keys.abrir());
+    // trocou uma tecla: as dicas do HUD mudam junto, na hora
+    this.keys.onMudou = () => this._atualizarRotulos();
 
     // ---------------------------------------------------- celular
     this.phone.getContext = () => ({
@@ -426,6 +547,12 @@ export class Game {
     $('resume-title-btn').addEventListener('click', () => this.resumeFromTitle());   // [62]
   }
 
+  /** Abre ou fecha a tela de opções (a de teclas se cuida sozinha). */
+  _abrirOpcoes(on) {
+    this._opcoesAbertas = !!on;
+    $('options-screen').classList.toggle('hidden', !on);
+  }
+
   // ==================================================================
   //  estados de jogo
   // ==================================================================
@@ -465,6 +592,8 @@ export class Game {
 
     $('title-screen').classList.add('hidden');
     $('over-screen').classList.add('hidden');
+    this._abrirOpcoes(false);
+    this.keys.fechar();
     this.hud.show(true);
     this.hud.reset();
     this.hud.setHearts(this.hearts);
@@ -475,7 +604,27 @@ export class Game {
     this.state = 'playing';
     this.hasGame = true;
     this.input.enabled = true;
-    this.input.requestLock();                                 // [15]
+    if (this.toque) this._telaCheia();
+    else this.input.requestLock();                            // [15]
+  }
+
+  /**
+   * Tela cheia e, se der, travada na horizontal.
+   *
+   * No celular a barra do navegador come 15% da tela e reaparece a cada
+   * arrasto para baixo — bem no meio de uma virada de câmera. Os dois
+   * pedidos podem ser negados (iOS não trava orientação), e negados eles
+   * são: o jogo continua igual, só menos confortável.
+   */
+  _telaCheia() {
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        el.requestFullscreen({ navigationUI: 'hide' })
+          .then(() => screen.orientation?.lock?.('landscape').catch(() => {}))
+          .catch(() => {});
+      }
+    } catch { /* sem tela cheia: segue o jogo */ }
   }
 
   /**
@@ -513,10 +662,12 @@ export class Game {
   resumeFromTitle() {
     if (!this.hasGame) return;
     $('title-screen').classList.add('hidden');
+    this._abrirOpcoes(false);
+    this.keys.fechar();
     this.hud.show(true);
     this.state = 'playing';
     this.input.enabled = true;
-    this.input.requestLock();
+    if (!this.toque) this.input.requestLock();
     /*
      * Devolve a trilha de onde o jogador parou. Sem isto ele voltava
      * para o meio de uma luta de chefão ouvindo a música de abertura,
@@ -805,9 +956,14 @@ export class Game {
    * roda só quando o jogador troca — nunca dentro do laço.
    */
   applyPreset(index) {
-    const p = PRESETS[index];
+    const p = PRESETS[index] || PRESETS[DEFAULT_PRESET];
+    index = PRESETS.indexOf(p);
     this.presetIndex = index;
     this.settings.set('presetIndex', index);
+
+    for (const btn of document.querySelectorAll('#qual-group .choice')) {
+      btn.classList.toggle('active', Number(btn.dataset.qual) === index);
+    }
 
     this.gfx.applyPreset(p, this.gfx.scene);
     this.sky.setShadowQuality(p.shadowMapSize, p.shadowRadius);
@@ -850,6 +1006,10 @@ export class Game {
     this.gfx.setFar(d.dist);
     this.sky.setRenderDistance(d.dist);      // domo, estrelas e lua encolhem junto
     this._aplicarNevoa();
+
+    for (const btn of document.querySelectorAll('#dist-group .choice')) {
+      btn.classList.toggle('active', Number(btn.dataset.dist) === i);
+    }
 
     this.settings.set('renderDistanceIndex', i);
     if (this.hud) this.hud.toast('ALCANCE: ' + d.label, 'time');
@@ -1554,6 +1714,23 @@ export class Game {
       // fim de jogo: mundo congelado, cena continua desenhada
       this.sky.setPaused(true);
     }
+
+    /*
+     * Os controles na tela somem quando não há o que controlar: menu,
+     * celular, Plano, cutscene ou fim de jogo. Fica num lugar só, no
+     * laço de cima, pelo mesmo motivo do som contínuo — quem aparece
+     * sozinho precisa de alguém que rode SEMPRE para sumir.
+     */
+    if (this.touch) {
+      this.touch.atualizar({
+        jogando: this.state === 'playing',
+        modal: this.phone.open || this.plan.aberto || this.dialogue.ativo,
+        modo: this.mode,
+        emFase: !!this.emFase,
+        deus: this.god,
+      });
+    }
+
     this._somContinuo();
     this.input.endFrame();
   }
@@ -1641,6 +1818,12 @@ export class Game {
       // o clique que captura o ponteiro não deve virar tiro
       const clicked = this.input.consumeClick();
       if (clicked && this.input.locked) this._shoot();        // [27]
+      /*
+       * No toque, o botão de atirar é SEGURADO, não tocado uma vez por
+       * disparo: metralhar a dedadas não é jogo, é tendinite. A cadência
+       * continua sendo a da arma — `_shoot` respeita o `canFire`.
+       */
+      if (this.input.toque.atirar) this._shoot();
     } else {
       this.input.consumeMouse();
       this.input.consumeWheel();
@@ -1861,10 +2044,11 @@ export class Game {
     return {
       forward: ax.forward,
       strafe: ax.strafe,
-      up: this.input.down('Space') ? 1 : 0,
-      down: (this.input.down('ShiftLeft') || this.input.down('ControlLeft')) ? 1 : 0,
-      yawLeft: this.input.down('KeyQ') ? 1 : 0,
-      yawRight: this.input.down('KeyR') ? 1 : 0,
+      // no toque os botões ▲ e ▼ escrevem nos mesmos comandos [43]
+      up: this.input.jumping ? 1 : 0,
+      down: (this.input.descer || this.input.boosting) ? 1 : 0,
+      yawLeft: this.input.segurando('heliEsq') ? 1 : 0,
+      yawRight: this.input.segurando('heliDir') ? 1 : 0,
       // [11] na câmera externa o nariz segue o mouse; na interna, não
       desiredYaw: this.camera.mode === 'heli-in' ? null : this.camera.yaw + Math.PI,
     };
@@ -2022,39 +2206,58 @@ export class Game {
     this._updateAimFeedback();
   }
 
+  /**
+   * O selo da tecla (ou do botão) de uma ação, pronto para o HUD.
+   *
+   * A dica tem que dizer o que ESTE jogador vai apertar: quem trocou o F
+   * de lugar não pode ler "F" na tela, e quem está no celular não tem
+   * tecla nenhuma para apertar — tem um botão redondo escrito AÇÃO.
+   */
+  _tecla(id) {
+    if (this.toque) return `<kbd>${BOTOES_TOQUE[id] || '?'}</kbd>`;
+    return `<kbd>${this.binds.rotulo(id)}</kbd>`;
+  }
+
   _updatePrompt() {
+    const acao = this._tecla('acao');
+    const visao = this._tecla('visao');
+    // voando, os botões de pular e correr viram subir e descer, e é
+    // assim que eles aparecem escritos na tela
+    const sobe = this.toque ? '<kbd>▲</kbd>' : this._tecla('pular');
+    const desce = this.toque ? '<kbd>▼</kbd>' : this._tecla('correr');
+
     if (this.mode === 'foot') {
       if (this.god) {
-        this.hud.setPrompt('MODO DEUS · <kbd>Espaço</kbd> subir · <kbd>Shift</kbd> descer'
-          + ' · <kbd>Ctrl</kbd> turbo · <kbd>M</kbd> sair');
+        this.hud.setPrompt(`MODO DEUS · ${sobe} subir · ${desce} descer`
+          + (this.toque ? '' : ` · ${this._tecla('turbo')} turbo · ${this._tecla('deus')} sair`));
         return;
       }
       const p = this.player.position;
       const dHeli = dist2D(p.x, p.z, this.heli.root.position.x, this.heli.root.position.z);
       if (dHeli < 6.5) {
-        this.hud.setPrompt('<kbd>F</kbd> pilotar o helicóptero');
+        this.hud.setPrompt(`${acao} pilotar o helicóptero`);
         return;
       }
       if (this.landmarks.cabinAtPlatform(p.x, p.z, p.y)) {      // [54]
-        this.hud.setPrompt('<kbd>F</kbd> entrar no bondinho');
+        this.hud.setPrompt(`${acao} entrar no bondinho`);
         return;
       }
       const car = this.cars.nearest(p.x, p.z, GAME.vehicleRange + CAR.length * 0.5);
       if (car) {
-        this.hud.setPrompt('<kbd>F</kbd> entrar no carro');
+        this.hud.setPrompt(`${acao} entrar no carro`);
         return;
       }
       this.hud.setPrompt(null);
     } else if (this.mode === 'cable') {                         // [54]
       this.hud.setPrompt(this.landmarks.cabinDocked(this.cableCabin)
-        ? '<kbd>F</kbd> descer na estação'
+        ? `${acao} descer na estação`
         : 'A caminho da próxima estação...');
     } else if (this.mode === 'car') {
-      this.hud.setPrompt('<kbd>F</kbd> sair &nbsp;·&nbsp; <kbd>V</kbd> visão interna');
+      this.hud.setPrompt(`${acao} sair &nbsp;·&nbsp; ${visao} visão interna`);
     } else {
       this.hud.setPrompt(this.heli.canExit
-        ? '<kbd>F</kbd> descer &nbsp;·&nbsp; <kbd>V</kbd> visão interna'
-        : '<kbd>Shift</kbd> descer &nbsp;·&nbsp; <kbd>Espaço</kbd> subir');
+        ? `${acao} descer &nbsp;·&nbsp; ${visao} visão interna`
+        : `${desce} descer &nbsp;·&nbsp; ${sobe} subir`);
     }
   }
 
@@ -2070,10 +2273,18 @@ export class Game {
   }
 }
 
+/** Como cada ação se chama na tela de toque, para as dicas do HUD. */
+const BOTOES_TOQUE = {
+  acao: 'AÇÃO', atirar: 'ATIRAR', pular: 'PULAR', correr: '▼', visao: '👁',
+  missil: '🚀', plano: '📋', celular: '📱',
+};
+
 const EMPTY_INPUT = {
   axes: { forward: 0, strafe: 0 },
   running: false,
+  descer: false,
   boosting: false,
   jumping: false,
   down: () => false,
+  segurando: () => false,
 };

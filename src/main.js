@@ -14,7 +14,7 @@ export async function boot() {
   const game = new Game(canvas);
   await game.build((label) => { note.textContent = label; });
 
-  note.textContent = 'clique em INICIAR JOGO';
+  note.textContent = game.toque ? 'toque em INICIAR JOGO' : 'clique em INICIAR JOGO';
   startBtn.disabled = false;
   window.__cidade3d = game;        // útil para depurar no console
 

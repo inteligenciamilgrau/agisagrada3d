@@ -418,6 +418,15 @@ sempre em primeiro plano e é uma entidade só.
 
 ## Controles
 
+**Todas as teclas abaixo são configuráveis** na tela `CONTROLES`, no menu de
+abertura: clique numa tecla, aperte a nova, pronto. Se a tecla escolhida já
+pertencia a outra ação, as duas trocam de lugar — assim nada fica sem tecla,
+que é como se perde o pulo sem perceber três reatribuições depois. `ESC` é a
+única fixa: ela é a saída de emergência, e um atalho mal escolhido em cima
+dela trancaria o jogador dentro da partida.
+
+A tabela mostra o padrão de fábrica.
+
 | Tecla | Ação |
 |---|---|
 | `W` `A` `S` `D` | Mover |
@@ -445,6 +454,28 @@ sempre em primeiro plano e é uma entidade só.
 
 No helicóptero: `W`/`S` frente e ré (o bico abaixa ao avançar), `A`/`D`
 deslocam para os lados bancando, `Espaço` sobe e `Shift` desce.
+
+### No celular
+
+Em aparelho de toque os controles na tela ligam sozinhos (dá para forçar ou
+desligar em `OPÇÕES ▸ CONTROLES NA TELA`). São três peças:
+
+| Na tela | Ação |
+|---|---|
+| **Analógico**, embaixo à esquerda | Andar. Ele é **flutuante**: nasce onde o dedo encostar, em vez de exigir que o polegar acerte um círculo desenhado. A velocidade é proporcional à deflexão, e **no talo o Bob corre** — o anel acende para avisar |
+| **Qualquer outro canto da tela** | Olhar em volta (é o mouse). **Dois dedos** dão zoom |
+| **ATIRAR** (segurar), **PULAR**, **AÇÃO** | O mínimo para jogar |
+| **▲ ▼** | Subir e descer — só aparecem voando |
+| **👁 🚀** | Câmera interna e míssil teleguiado — só aparecem dentro de veículo e no meio de uma fase |
+| **☰ 📋 📱** | Menu, o Plano da AGI e o celular |
+
+O que não serve agora não aparece: fora do helicóptero não há botão de descer,
+fora de uma fase não há botão de míssil. E durante uma conversa, o Plano ou o
+celular os controles somem inteiros — a fala avança tocando em qualquer lugar.
+
+Ao iniciar o jogo, o navegador é posto em tela cheia e, onde dá, travado na
+horizontal. Estreando num celular o jogo já começa em qualidade `BAIXA` com a
+cidade em `POUCA` — só na primeira vez, e só se nunca houve escolha salva ali.
 
 **O mouse comanda a direção**, não só a câmera: a pé o corpo encara sempre para
 onde a câmera olha (então `A`/`D` andam de lado sem virar as costas, e o tiro
@@ -498,7 +529,8 @@ src/
   game.js             orquestrador: estados, veículos, dano, missão
   config.js           TODAS as constantes de mundo e de jogo
   utils.js            matemática, RNG determinístico, malha viária
-  input.js            teclado, mouse e pointer lock
+  input.js            teclado, mouse, pointer lock e o estado do toque
+  keys.js             ações do jogo e o mapa ação -> tecla (configurável)
   camera.js           câmera em 3ª pessoa, zoom e visões internas
   player.js           controle do jogador
   settings.js         preferências salvas no localStorage
@@ -531,6 +563,8 @@ src/
     phone.js          celular e conversas com os NPCs
     dialogue.js       cutscenes e retratos voxel
     plan.js           o Plano da AGI (tecla J)
+    touch.js          analógico, área de olhar e botões no celular
+    keysscreen.js     a tela de CONTROLES: troca de teclas
   story/
     story.js          TODO o roteiro: fases, diálogos, vilões, as 8 peças
   ent/
@@ -642,9 +676,19 @@ painel e volante, e o vidro escuro some para não tapar a visão).
 ## Preferências salvas
 
 Tudo que dá para configurar fica guardado no `localStorage` e volta na próxima
-sessão: **limite de tempo**, **iluminação**, **qualidade gráfica** e
-**movimento na cidade**. O link *restaurar padrões*, embaixo do botão de
-iniciar, volta tudo ao original.
+sessão: **limite de tempo**, **iluminação**, **qualidade gráfica**, **alcance
+de renderização**, **movimento na cidade**, **volume**, **controles na tela** e
+**as teclas remapeadas**. O link *restaurar padrões*, dentro de `OPÇÕES`, volta
+tudo ao original — inclusive as teclas, porque um reset pela metade, que diz ter
+voltado ao normal e deixa o pulo no lugar errado, é pior que reset nenhum.
+
+### O menu de abertura
+
+A abertura tem uma pergunta só: **jogar**. As vinte teclas de atalho que ficavam
+listadas ali saíram para a tela `CONTROLES`, e os seletores de qualidade, som e
+população para `OPÇÕES`. Não era só desordem: a lista empurrava o botão de
+iniciar para fora da janela em 720p, e a primeira coisa que o jogo mostrava era
+uma parede de atalhos que ninguém decora de uma vez.
 
 O mundo já nasce com a população salva, em vez de criar 24 pedestres
 e descartar metade logo depois. Valores inválidos (de uma versão antiga ou
@@ -658,7 +702,7 @@ Fica em `src/settings.js`.
 
 ## Iluminação: ciclo, sempre dia ou sempre noite
 
-Escolha na tela de abertura ou com a tecla `N` em jogo. Em "sempre dia" (12h) e
+Escolha em `OPÇÕES` ou com a tecla `N` em jogo. Em "sempre dia" (12h) e
 "sempre noite" (22h) o relógio congela; reiniciar a partida mantém o modo.
 
 Fixar a hora recalcula o estado do sol na hora, sem esperar o próximo quadro —
