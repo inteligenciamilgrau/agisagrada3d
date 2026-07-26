@@ -689,3 +689,9 @@ kbd{
 .slider-val{
   font-size:10px; font-weight:800; opacity:.55; width:26px; text-align:left;
 }
+
+/* aviso sob COMEÇAR DE NOVO: o botão é destrutivo, tem que avisar */
+#start-warn{
+  font-size:10px; letter-spacing:1px; color:var(--bad);
+  opacity:.85; margin-top:-14px; margin-bottom:10px;
+}

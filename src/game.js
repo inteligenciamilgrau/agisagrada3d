@@ -32,7 +32,7 @@ import { Phone } from './ui/phone.js';
 import { Settings } from './settings.js';
 
 // ---- campanha: Bob em Busca da AGI Sagrada
-import { carregarCampanha, salvarCampanha, proximaFase } from './story/story.js';
+import { carregarCampanha, salvarCampanha, zerarCampanha, proximaFase } from './story/story.js';
 import { Dialogue } from './ui/dialogue.js';
 import { PlanScreen } from './ui/plan.js';
 import { PortalSystem } from './sys/portal.js';
@@ -413,7 +413,15 @@ export class Game {
     };
 
     // ---------------------------------------------------- botões das telas
-    $('start-btn').addEventListener('click', () => { this.audio.acordar(); this.start(); });
+    /*
+     * O mesmo botão faz duas coisas, e o TEXTO dele diz qual: com
+     * partida em andamento ele vira COMEÇAR DE NOVO e zera o Plano;
+     * sem partida é só INICIAR JOGO e o progresso salvo continua.
+     */
+    $('start-btn').addEventListener('click', () => {
+      this.audio.acordar();
+      this.start(this.hasGame);
+    });
     $('restart-btn').addEventListener('click', () => this.restart());   // [40]
     $('resume-title-btn').addEventListener('click', () => this.resumeFromTitle());   // [62]
   }
@@ -421,7 +429,16 @@ export class Game {
   // ==================================================================
   //  estados de jogo
   // ==================================================================
-  start() {
+  /**
+   * @param {boolean} zerar  apaga o Plano da AGI e recomeça a campanha
+   *
+   * Só o botão que DIZ "começar de novo" zera. O "INICIAR JOGO" de
+   * quem volta no dia seguinte não pode apagar nada: no boot ainda não
+   * existe partida em andamento, o botão nasce com esse texto, e quem
+   * clicou ali queria jogar — não recomeçar do zero.
+   */
+  start(zerar = false) {
+    if (zerar) this._zerarCampanha();
     this.timerEnabled = $('timer-enabled').checked;           // [8]
     this.timeLeft = GAME.totalTime;
     this.score = 0;
@@ -461,7 +478,14 @@ export class Game {
     this.input.requestLock();                                 // [15]
   }
 
-  restart() { this.start(); }                                 // [40]
+  /**
+   * [40] "JOGAR NOVAMENTE" depois de um fim de jogo.
+   *
+   * NÃO zera a campanha: morrer numa fase não pode custar as peças que
+   * já foram conquistadas em todas as outras. Quem quiser recomeçar do
+   * zero usa COMEÇAR DE NOVO no menu, que avisa o que faz.
+   */
+  restart() { this.start(false); }
 
   /**
    * [62] Volta ao menu principal SEM jogar a partida fora. O mundo continua de pé
@@ -479,6 +503,8 @@ export class Game {
     // o botão de retomar só aparece quando há mesmo uma partida atrás da tela
     $('resume-title-btn').classList.toggle('hidden', !this.hasGame);
     $('start-btn').textContent = this.hasGame ? 'COMEÇAR DE NOVO' : 'INICIAR JOGO';
+    // avisa que o botão apaga o Plano — decisão destrutiva não pode surpreender
+    $('start-warn').classList.toggle('hidden', !this.hasGame);
     // a dica "clique em INICIAR JOGO" não faz sentido com a partida rolando
     if (this.hasGame) $('loading-note').textContent = '';
   }
@@ -1124,6 +1150,24 @@ export class Game {
       this.semDano = 0;
     }
     this.audio.item(true);
+  }
+
+  /**
+   * Zera o Plano da AGI: peças, fases vencidas e o save do navegador.
+   *
+   * MUTA o objeto no lugar em vez de trocá-lo. O \`PortalSystem\` e a
+   * tela do Plano guardaram a REFERÊNCIA dele lá na construção do
+   * mundo; substituir por um objeto novo deixaria os dois apontando
+   * para o estado velho, e os portais continuariam verdes.
+   */
+  _zerarCampanha() {
+    for (const k of Object.keys(this.campanha.conquistas)) this.campanha.conquistas[k] = false;
+    for (const k of Object.keys(this.campanha.fasesVencidas)) delete this.campanha.fasesVencidas[k];
+    for (const k of Object.keys(this.campanha.moedas)) delete this.campanha.moedas[k];
+    this.campanha.faseAtual = null;
+    zerarCampanha();
+    this.plan.recentes.clear();
+    this._atualizarCompanheiros();     // o Saci-Bot volta a ficar trancado
   }
 
   /** Aviso que não repete em rajada: um por tipo a cada 2,5 s. */

@@ -59,13 +59,24 @@ export class Audio {
       this.master.gain.value = 1;
       this.master.connect(this.ctx.destination);
 
+      /*
+       * ---- O GRAFO ----
+       *   efeitos ─┐
+       *            ├─> master ─> destino
+       *   musica  ─┘
+       *
+       * Os DOIS barramentos vão para o MESTRE, nunca um para o outro.
+       * Ligar a música no barramento de efeitos faria o slider de efeitos
+       * mandar na trilha também — e o de efeitos ligado nele mesmo é um
+       * laço que não chega a lugar nenhum: silêncio absoluto.
+       */
       this.efeitos = this.ctx.createGain();
       this.efeitos.gain.value = this.ganho;
-      this.efeitos.connect(this.efeitos);
+      this.efeitos.connect(this.master);
 
       this.musica = this.ctx.createGain();
       this.musica.gain.value = this.ganhoMusica;
-      this.musica.connect(this.efeitos);
+      this.musica.connect(this.master);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
