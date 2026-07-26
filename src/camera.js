@@ -48,6 +48,9 @@ export class GameCamera {
 
   get isInterior() { return this.mode === 'car-in' || this.mode === 'heli-in'; }
 
+  /** Primeira pessoa: usada dentro das fases da campanha. */
+  get isFPS() { return this.mode === 'fps'; }
+
   /** [11] Movimento do mouse gira a visão. */
   look(dx, dy) {
     this.yaw -= dx * CAMERA.sensitivity;
@@ -75,6 +78,7 @@ export class GameCamera {
       this._updateInterior(dt, interior);
       return;
     }
+    if (this.mode === 'fps') { this._updateFPS(dt, focusPoint); return; }
 
     this.distance = damp(this.distance, this.wantDistance, 9, dt);
 
@@ -129,6 +133,34 @@ export class GameCamera {
      */
     this._look.copy(this._smoothFocus);
     this._look.y += lift + dist * this.frameLift;
+    this.cam.lookAt(this._look);
+    this._applyShake(dt);
+  }
+
+  /**
+   * Primeira pessoa — dentro das fases da campanha.
+   *
+   * Na arena a terceira pessoa não serve: o espaço é fechado, a câmera
+   * bate na parede atrás do jogador e é empurrada para cima da nuca
+   * dele, tapando justamente a mira. Em primeira pessoa o problema não
+   * existe — a mira fica limpa e o cenário aparece inteiro, que é o
+   * jeito certo de atirar num interior.
+   */
+  _updateFPS(dt, focusPoint) {
+    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+    const dir = new THREE.Vector3(
+      -Math.sin(this.yaw) * cp,
+      sp,
+      -Math.cos(this.yaw) * cp,
+    );
+
+    // sem amortecimento de posição: em primeira pessoa qualquer atraso
+    // entre o passo e a vista dá enjoo
+    this._pos.copy(focusPoint);
+    this._pos.y += 0.16;                  // dos ombros para a altura dos olhos
+    this.cam.position.copy(this._pos);
+
+    this._look.copy(this._pos).add(dir);
     this.cam.lookAt(this._look);
     this._applyShake(dt);
   }

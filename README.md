@@ -1,6 +1,276 @@
-# Cidade 3D IMG
+# 🏺 Bob em Busca da AGI Sagrada 3D
 
-Jogo 3D de entregas em uma cidade simulada, feito em **Three.js (WebGL2 + PBR)**.
+A cruzada da comunidade **Inteligência Mil Grau** em mundo aberto 3D, feita em
+**Three.js (WebGL2 + PBR)**.
+
+Bob e os escudeiros precisam recuperar os **5 Fragmentos do Cálice de Silício**
+das mãos das Big Techs e trazê-los pro Brasil, onde a comunidade vai treinar o
+**CURUPIRA-1** — a primeira AGI verde-amarela.
+
+> Adaptação 3D do beat 'em up 2D
+> [agisagrada](https://inteligenciamilgrau.github.io/agisagrada/). A história,
+> os vilões e as guildas são os mesmos; o que mudou foi a forma de jogar.
+
+---
+
+## A campanha
+
+O jogo 2D era um beat 'em up de tela lateral com um mapa-múndi de menu. Aqui a
+cidade brasileira inteira é o **hub**: cada fase tem um **portal** num marco do
+mapa, e chegar até ele é jogo — de carro, a pé ou de helicóptero.
+
+| Fase | Chefão | Fragmento | Portal fica em |
+|---|---|---|---|
+| **0 — O Chamado** | Estagiário Vibe-Coder | 🧠 o checkpoint | Estúdio IMG, no centro |
+| **1 — A Canetada** | Donald Trunfo **(colossal, na cidade)** | ⚡ Energia | mirante do **Cristo Redentor** |
+| **2 — O Exército de Lata** | Ilon Mosca | 💰 Investimento | topo do **Pão de Açúcar** |
+| **3 — O Templo do Lucro** | Samuca Altíssimo | 🧑‍🔬 Pesquisadores | **Museu do Olho** |
+| **4 — A Biblioteca Infinita** | Dário Amô-Dei | 📚 Dados | **Pelourinho** |
+| **5 — A Muralha de Firewall** | Xi Deep-Zeek | 🔲 Chips | **Ponte Hercílio Luz** |
+| **FINAL — Labs IMG** | todos eles | 🔥 O Treino | centro da cidade |
+
+Subir a serra do Corcovado de carro para ir cobrar o Trunfo é o tipo de coisa que
+só existe porque o mapa já estava lá. **A viagem virou parte da fase.**
+
+O **Plano da AGI** (tecla `J`) é o placar da campanha: oito peças, o que já caiu
+e para onde ir agora. Ele existe porque num mundo aberto o jogador que voltou
+depois de dois dias precisa saber, em um segundo, onde parou.
+
+O progresso fica salvo no navegador — ninguém termina sete fases numa sentada.
+
+---
+
+## Por que os personagens são voxel
+
+O jogo 2D é pixel art 16-bit. **Voxel é a tradução honesta disso para o 3D:**
+pixel com profundidade. Não é uma engine diferente — um boneco de caixas é
+`BoxGeometry`, e três.js desenha isso melhor do que qualquer coisa.
+
+Sai mais barato, inclusive: um pedestre da cidade são 10 malhas de cilindro e
+esfera; um boneco voxel articulado são **6 caixas**, e caixas iguais dividem
+geometria e material.
+
+O que impede de parecer asset colado de outro jogo é o **material, não a forma**.
+Os blocos entram com `MeshStandardMaterial` e recebem o mesmo sol, o mesmo céu
+por IBL e as mesmas sombras do resto da cena. Forma blocada + luz realista lê
+como estilo; cor chapada sem luz leria como erro.
+
+**Nenhuma imagem entra no repositório.** Os retratos da caixa de diálogo são o
+próprio modelo voxel projetado de frente num canvas — as mesmas caixas, as
+mesmas cores, vistas de face. Mexer no molde do personagem atualiza o retrato
+junto, pelo mesmo motivo que os normal maps do projeto saem do mapa de altura:
+duas coisas que precisam concordar não podem ser desenhadas duas vezes.
+
+---
+
+## Na cidade é terceira pessoa; na fase é primeira
+
+Dentro da arena o jogo vira **primeira pessoa**, com a arma na tela.
+
+Não é preferência estética — é conserto. A arena é um interior apertado, e a
+câmera de terceira pessoa bate na parede atrás do jogador: o código que impede
+a câmera de furar parede a empurra para frente, ela sobe na nuca do Bob e tapa
+justamente a mira, bem na hora de atirar. Em primeira pessoa o problema não
+existe.
+
+A arma é o **Prompt Mágico**, o tablet-pergaminho dourado do roteiro. Ela é
+filha da câmera, e isso teve duas consequências: objeto filho de câmera só
+aparece se a câmera estiver na cena (o three percorre o grafo a partir dela),
+e a 35 cm ela cairia dentro do plano de corte — por isso é uma miniatura logo
+além do `near`, não um objeto de tamanho real colado no rosto.
+
+O corpo do Bob some (a câmera está dentro dele). **O Loro não** — ele continua
+voando ao lado, que é metade da graça.
+
+## O Loro Estocástico
+
+O papagaio voa atrás do ombro direito o tempo todo. Ele não copia a posição do
+Bob: persegue um ponto-alvo com **mola amortecida**, e é essa folga que faz
+parecer bicho em vez de peça grudada — quando o Bob vira de repente, o Loro faz
+a curva larga e alcança depois.
+
+## Energia
+
+São **6 corações**, e eles voltam: sem apanhar por 9 s, você recupera um a cada
+6 s. Eram 3, herdados do jogo de entregas — ali o risco era atropelamento
+ocasional. A campanha mudou o jogo: ondas de capangas, canetadas teleguiadas e
+chefões de 55 m, tudo a céu aberto ao mesmo tempo. Com 3 a fase acabava antes de
+o jogador entender o padrão do chefão, que é justamente a graça.
+
+A regeneração recompensa recuar e se reposicionar em vez de punir para sempre um
+erro dos primeiros segundos — e no meio da briga ela nunca completa, porque o
+relógio zera a cada dano.
+
+## O míssil teleguiado (`X`)
+
+Arma pesada de recarga longa: aponte a mira num inimigo, a trava fecha, e o
+míssil **persegue ele** até acertar. 120 de dano, 11 s de recarga.
+
+Existe porque o tiro comum e o míssil do helicóptero são balísticos: contra um
+drone que zigue-zagueia a 40 m, ou contra um chefão de 15 m que anda enquanto
+você recua, acertar vira loteria.
+
+A trava não é raio exato — acha o inimigo cujo **ângulo** em relação à mira é o
+menor dentro de um cone de ~14°. Assim vale "colocar a mira em cima", que é o
+que o jogador acha que está fazendo, e não "encostar o raio no colisor". E o
+tamanho do alvo puxa a trava a favor: sem isso, um colosso de 55 m visto de
+perto ficava *mais* difícil de travar que um drone, porque o centro dele sai do
+cone justamente quando ele enche a tela.
+
+## Os dois ajudantes, decididos pelos pés
+
+Atirar chama um companheiro, e **quem vem depende do pulo**:
+
+| | Quem ataca | O que faz |
+|---|---|---|
+| Atirar **no ar** | 🦜 **Loro Estocástico** | mergulha girando e crava o bico (22 de dano) |
+| Atirar **no chão** | 🤖 **Saci-Bot** | some num redemoinho e reaparece ATRÁS do inimigo (30 de dano) |
+
+Uma tecla, dois golpes. Amarrar no pulo é o que transforma os dois em coisa
+que se aprende a usar, em vez de automatismo que resolve a luta sozinho — e dá
+ao pulo uma função ofensiva, que ele não tinha.
+
+O Loro é a *Repetição Infinita* do jogo 2D, onde ele repetia o último golpe que
+via na tela; aqui ele repete o SEU. O **Saci-Bot** é a conquista da Guilda dos
+Roboticistas, montado com os blueprints do Optimus roubados na Gigafábrica —
+ele só aparece depois que o Ilon cai. Reaparece atrás do alvo porque quem
+rouba não chega pela frente.
+
+## O Estúdio e o Labs IMG são prédios de verdade
+
+Os dois pontos onde a campanha começa e termina agora são **galpões com porta e
+hall**, em quarteirões reservados no centro. O portal fica dentro do hall: dá
+para ver da rua pelo vão da porta, mas é preciso entrar.
+
+Isso conserta um erro de coordenada que passou despercebido. Os cruzamentos da
+malha ficam em múltiplos de 64 a partir de −224 — **−224, −160, −96, −32, 32,
+96, 160, 224**. Ou seja: (0,0) e (0,64) *parecem* esquinas redondas e são
+exatamente o **centro de um quarteirão**. O portal nascia dentro de um prédio
+genérico, sem porta por onde entrar.
+
+A colisão da fachada é dividida em dois trechos, deixando o vão da porta livre —
+é isso que separa "prédio com desenho de porta" de "prédio em que se entra".
+Testado nos dois: entrando pelo eixo da porta, passa; 12 m fora do eixo, a
+parede barra.
+
+O quarteirão é reservado antes da geração dos prédios, pelo mesmo caminho que o
+heliporto já usava — `city.js` só ergue prédio em bloco `urban` e só planta
+árvore em `park`, então o reservado nasce limpo.
+
+## A guerra é na cidade
+
+Nenhuma fase acontece em sala fechada. Os inimigos **saem do marco** que o
+chefão ocupou — a boca da ponte, o vão do museu, o largo do Pelourinho — e a
+briga corre a céu aberto, com trânsito, pedestres, carro e helicóptero ao
+alcance.
+
+O que separa um chefão do outro é o **tamanho**, e o tamanho muda a luta:
+
+| Porte | Altura | Como se enfrenta | Quem |
+|---|---|---|---|
+| médio | 4,5 m | a pé, na porrada e no tiro | Estagiário, Samuca |
+| grande | 15 m | precisa recuar; carro ajuda | Ilon (no mecha), Dário |
+| colossal | 55 m | **só míssil de helicóptero** | Trunfo, Deep-Zeek |
+
+A escala é mecânica, não enfeite: um boneco de 55 m combatido do chão vira
+frustração, e um de 4,5 m combatido só de helicóptero vira tédio. Por isso
+`soMissil` está amarrado ao PORTE. Já `marcha` é da FICHA — dos dois colossos,
+só o Trunfo ameaça o Labs IMG; o dragão do Deep-Zeek persegue você. Amarrar a
+marcha ao tamanho faria os dois jogarem a mesma luta.
+
+## King Kong no Corcovado
+
+O Trunfo desce do Corcovado e marcha os ~650 m até o laboratório. Mas abaixo de
+**28% de vida** ele larga a marcha e **corre de volta morro acima para se
+agarrar no Cristo Redentor** — e a luta vira aérea em volta da estátua.
+
+Vale como último ato porque **inverte a pressão**: até ali o relógio corria
+contra você, com ele caminhando para o galpão; agora ele está parado no ponto
+mais alto do mapa e é você quem precisa chegar perto de um bicho de 55 m.
+
+Um detalhe que a implementação obrigou: a escalada é interpolada pela distância
+percorrida, **não pelo relevo**. O Corcovado de propósito não tem superfície
+caminhável registrada — a colisão dele é amarrada à borda interna da estrada em
+espiral, um equilíbrio que já custou caro. Pedir a altura ao mundo deixaria ele
+andando no pé do morro.
+
+Quatro regras fazem a luta funcionar:
+
+**Bala não faz nada.** Atirar de pistola avisa na tela em vez de não fazer
+efeito calado — sem o aviso o jogador acha que é bug, metralhando um alvo
+enorme sem ver número descer.
+
+**Ele caminha para um destino.** Se chegar, pisa no galpão e a fase é perdida.
+São ~835 m a 6,5 m/s, e ele acelera para 11 m/s quando a vida cai: o relógio da
+fase é a ameaça andando, não um cronômetro abstrato na tela.
+
+**As canetadas perseguem, mas mal.** Os decretos voadores corrigem o rumo a
+1,5 rad/s. Testado: alvo parado toma em 2,6 s, alvo fugindo a 55 m/s despista.
+Perseguição perfeita não é desafio, é imposto — e sem ataque nenhum de longe
+bastava ficar parado a 200 m metralhando sem risco.
+
+**O tremor sai da animação, não de um cronômetro.** O baque de cada pisada
+dispara quando a perna do boneco cruza o chão, então continua batendo junto com
+o pé mesmo quando ele muda de velocidade.
+
+## Som e trilha: tudo sintetizado
+
+Cada efeito é montado na hora com osciladores e ruído em WebAudio — **nenhum
+arquivo de áudio**. O jogo 2D já fazia assim, e aqui a razão é a mesma mais uma:
+o projeto inteiro não tem um único asset externo (texturas procedurais, retratos
+gerados do modelo voxel). Um `.mp3` seria a primeira exceção, e uma que pesa
+megabytes.
+
+O `AudioContext` nasce no **primeiro clique**, não na carga: navegador nenhum
+deixa tocar áudio antes de um gesto, e criado cedo demais ele nasceria suspenso
+e tudo sairia mudo sem explicação.
+
+Volume em quatro níveis (MUDO / BAIXO / MÉDIO / ALTO), na tela de abertura ou na
+tecla `O`, salvo no navegador.
+
+Há uma trava por tipo de efeito: sem ela, uma explosão que pega 12 pedestres
+dispara 12 sons no mesmo milissegundo e satura — vira estalo sujo em vez de
+estouro.
+
+### As trilhas vieram do jogo 2D
+
+O motor de música chiptune foi portado inteiro: **13 trilhas**, mesmos acordes,
+mesma marcha imperial de chefão. Cada fase toca a sua, e a cidade entre fases
+toca a lofi de planejamento.
+
+| Quando | Trilha |
+|---|---|
+| Tela de abertura | `abertura` — piano lento de lenda antiga |
+| Na cidade, entre fases | `menu` — lofi de café e mapa |
+| Fase 0 | `saopaulo` — **o tema surf em Mi frígio**, o hino do canal |
+| Fases 1 a 5 | `washington`, `fabrica`, `vale`, `biblioteca`, `muralha` |
+| Fase final | `final` — corrida heroica Am-F-C-G |
+| **Chefão entra** | `boss` — **a marcha imperial em sol menor** |
+| Vitória / derrota | `vitoria` + fanfarra · `gameover` |
+
+O sequenciador **agenda à frente**, não toca "agora": a cada quadro ele enfileira
+no relógio do áudio tudo que couber nos próximos 120 ms. O
+`requestAnimationFrame` varia 10 ms de um quadro para o outro, e disparar nota
+na hora do quadro faria a batida balançar junto com o FPS. O relógio do áudio
+não balança.
+
+Um teto de 64 passos por quadro protege o caso da aba em segundo plano: ao
+voltar, `currentTime` pulou vários segundos e o laço tentaria agendar milhares
+de notas de uma vez.
+
+### Dá para ouvir o inimigo chegando
+
+**Zumbido de drone**: um enxame, não um som por bicho. É uma nota contínua cuja
+altura e volume vêm de quantos drones existem e de quão perto está o mais
+próximo. Um oscilador por drone viraria serra elétrica; dois osciladores
+levemente destunados dão o batimento de asa.
+
+**Patinha de robô**: tique metálico curto por inimigo que anda, com trava de
+cadência. Numa onda de seis, cada um sai em momento diferente e o conjunto vira
+o tec-tec-tec de coisa se aproximando.
+
+Os dois existem como **aviso**: numa cidade aberta o inimigo vem de trás de um
+prédio e ninguém olha para os quatro lados ao mesmo tempo.
 
 ---
 
@@ -65,9 +335,16 @@ guarda só as preferências de quem joga, no navegador de quem joga.
 
 ---
 
-## Por que Three.js e não voxel art
+## Por que o MUNDO não é voxel
 
-A escolha foi por **Three.js com pipeline PBR**, não voxel:
+Os personagens são voxel (seção acima); **o mundo não é**, e a distinção é
+proposital. Cristo Redentor, Pão de Açúcar, Hercílio Luz e o casario do
+Pelourinho vivem de forma curva e de reflexo — em cubo, viram outra coisa.
+Personagem é o contrário: são ~20 figuras que precisam ser reconhecíveis à
+distância, e aí o blocado com 3 ou 4 marcas fortes lê melhor que humanoide
+orgânico mal modelado.
+
+A escolha para o cenário foi **Three.js com pipeline PBR**, não voxel:
 
 | | Voxel art | Three.js + PBR (escolhido) |
 |---|---|---|
@@ -146,14 +423,20 @@ sempre em primeiro plano e é uma entidade só.
 | `W` `A` `S` `D` | Mover |
 | Mouse | Olhar **e** dirigir (o corpo, o carro e o nariz do heli seguem a câmera) |
 | Scroll | Zoom |
-| `Shift` | Correr |
+| `Shift` | Correr (14,5 m/s — o mapa tem 1,4 km) |
 | `Espaço` | Pular / subir no helicóptero |
-| `F` | Entrar / sair de carro e helicóptero |
+| `F` | **Entrar na fase** (perto de um portal) · entrar/sair de carro e helicóptero |
+| `J` | **O Plano da AGI** — as 8 peças e o próximo passo |
+| `Espaço` | Avançar diálogo · **pular muda quem ataca junto** |
+| `F` | Pular a cutscene inteira (durante uma fala) |
 | `V` | Alternar câmera interna / externa |
 | `E` ou clique esquerdo | Atirar — no helicóptero, dispara **míssil** |
+| `X` | **Míssil teleguiado** — trava no alvo sob a mira e persegue (recarga 11 s) |
 | `C` | Abrir o celular |
 | `T` | Ligar/desligar o limite de tempo |
 | `G` | Alternar qualidade gráfica (BAIXA / MÉDIA / ALTA) |
+| `L` | Alcance de renderização (CURTA / MÉDIA / LONGA / TOTAL) |
+| `O` | Volume do som (MUDO / BAIXO / MÉDIO / ALTO) |
 | `N` | Alternar iluminação (ciclo / sempre dia / sempre noite) |
 | `P` | Movimento na cidade: pouca → normal → movimentada → cheia |
 | `M` | Modo Deus: voar pelo mapa (`Espaço` sobe, `Shift` desce, `Ctrl` turbo) |
@@ -246,6 +529,21 @@ src/
     hud.js            corações, tempo, pontos, velocímetro
     minimap.js        radar rotativo
     phone.js          celular e conversas com os NPCs
+    dialogue.js       cutscenes e retratos voxel
+    plan.js           o Plano da AGI (tecla J)
+  story/
+    story.js          TODO o roteiro: fases, diálogos, vilões, as 8 peças
+  ent/
+    voxel.js          boneco de caixas articulado (PBR)
+    voxeldef.js       os moldes: quem é Bob, Trunfo, Loro, drone...
+    foe.js            inimigos e chefões com vida e fases de luta
+    loro.js           o papagaio que voa junto e mergulha no inimigo
+    viewmodel.js      a arma na tela (o Prompt Mágico)
+  sys/
+    portal.js         os portais das fases no mundo aberto
+    stage.js          andamento da fase: ondas, chefão, vitória
+  world/
+    arena.js          os interiores onde as fases acontecem
 ```
 
 ---

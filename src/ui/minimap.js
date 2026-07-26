@@ -111,8 +111,19 @@ export class Minimap {
       }
     }
 
-    // ---- [10] marcadores de coleta e entrega
+    /*
+     * ---- portais das fases ----
+     * Grudam na BORDA quando estão fora de alcance, com a letra do
+     * objetivo. O Plano da AGI diz "o portal está marcado no mapa"; sem
+     * isto a frase era mentira, e o jogador rodava a cidade procurando
+     * um feixe de luz que só se vê de perto.
+     */
     const pulseR = 6 + Math.sin(this.pulse) * 2.2;
+    for (const p of marks.portais || []) {
+      const cor = p.venceu ? '#3ddc84' : (p.aberta ? '#ffb020' : '#6b7280');
+      this._blip(ctx, TX, TY, p, cor, p.proxima ? pulseR : 5,
+        p.proxima ? '★' : '◆', px, pz, true);
+    }
     if (marks.heli) this._blip(ctx, TX, TY, marks.heli, '#25d0ff', 5, '🚁', px, pz, false);
     if (marks.pickup) this._blip(ctx, TX, TY, marks.pickup, '#ffb020', pulseR, 'C', px, pz, true);
     if (marks.deliver) this._blip(ctx, TX, TY, marks.deliver, '#3ddc84', pulseR, 'E', px, pz, true);

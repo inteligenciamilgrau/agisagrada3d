@@ -374,7 +374,8 @@ kbd{
 
 /* [13] seletor de iluminação e [61] de movimento na cidade */
 #cycle-choice{margin:0 0 18px}
-#pop-choice{margin:0 0 24px}
+#pop-choice{margin:0 0 18px}
+#vol-choice{margin:0 0 24px}
 .choice-note{
   display:block; margin-top:7px; font-size:10px; opacity:.35; letter-spacing:.4px;
 }
@@ -453,3 +454,212 @@ kbd{
   padding:40px; overflow:auto; font-family:ui-monospace,Consolas,monospace; font-size:13px;
 }
 #fatal pre{white-space:pre-wrap; color:#c9d4e4}
+
+/* ============================================================
+   BOB EM BUSCA DA AGI SAGRADA — telas da campanha
+   ============================================================ */
+
+/* ---------------------- barra do chefão ---------------------- */
+#boss-bar{
+  position:fixed; left:50%; top:26px; transform:translateX(-50%);
+  z-index:30; width:min(620px, 76vw); text-align:center; pointer-events:none;
+}
+#boss-name{
+  font-size:15px; font-weight:900; letter-spacing:3px; color:#fff;
+  text-shadow:0 2px 10px rgba(0,0,0,.9); margin-bottom:6px;
+}
+#boss-track{
+  height:15px; border:2px solid rgba(255,255,255,.28); border-radius:999px;
+  background:rgba(3,6,12,.72); overflow:hidden; box-shadow:0 6px 22px rgba(0,0,0,.55);
+}
+#boss-fill{
+  height:100%; width:100%; border-radius:999px;
+  background:linear-gradient(90deg,#ff4d4d,#ff8a3d);
+  transition:width .18s ease-out;
+}
+/* abaixo de 1/4 de vida o chefão entra em fúria — a barra avisa */
+#boss-fill.rage{background:linear-gradient(90deg,#ffb020,#ff4d4d); animation:bossPulse .5s infinite alternate}
+@keyframes bossPulse{from{filter:brightness(1)}to{filter:brightness(1.7)}}
+#boss-phase{
+  font-size:10px; letter-spacing:2px; opacity:.75; margin-top:5px; font-weight:700;
+}
+
+/* ---------------------- cartão de fase ---------------------- */
+#phase-card{
+  position:fixed; left:50%; top:38%; transform:translate(-50%,-50%);
+  z-index:44; text-align:center; pointer-events:none;
+  animation:phaseIn .7s cubic-bezier(.16,1,.3,1);
+}
+@keyframes phaseIn{from{opacity:0; transform:translate(-50%,-50%) scale(.85)}to{opacity:1}}
+#phase-card.out{opacity:0; transition:opacity .5s}
+#phase-flag{font-size:56px; line-height:1}
+#phase-title{
+  font-size:34px; font-weight:900; letter-spacing:-.5px; margin-top:6px;
+  text-shadow:0 4px 24px rgba(0,0,0,.9);
+}
+#phase-place{font-size:13px; letter-spacing:3px; opacity:.7; margin-top:4px; font-weight:700}
+
+/* ---------------------- caixa de diálogo ---------------------- */
+/*
+ * A conversa toma a TELA, não um cantinho.
+ *
+ * Antes era uma faixa no rodapé com texto de 16px: no meio de uma briga
+ * a céu aberto ela passava despercebida, e o jogador continuava tentando
+ * atirar sem entender por que o Bob tinha parado. Agora o mundo escurece
+ * atrás, o retrato cresce e o texto vai ao centro — fica claro, num
+ * relance, que o jogo passou a palavra para alguém.
+ */
+#dialogue{
+  --dlg-accent:#ffb020;
+  position:fixed; inset:0; z-index:46;
+  display:flex; align-items:center; justify-content:center;
+  padding:24px;
+  /* véu radial: escurece as bordas e preserva o centro da ação */
+  background:
+    radial-gradient(ellipse at center, rgba(3,6,12,.55) 0%, rgba(3,6,12,.88) 70%);
+  backdrop-filter:blur(3px);
+  gap:clamp(16px, 2.5vw, 34px);
+  animation:dlgIn .22s ease-out;
+}
+@keyframes dlgIn{from{opacity:0}to{opacity:1}}
+
+#dlg-portrait{
+  flex:0 0 auto; width:clamp(110px, 13vw, 168px); height:clamp(110px, 13vw, 168px);
+  border-radius:16px; border:3px solid var(--dlg-accent); overflow:hidden;
+  background:#0a0f18; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 0 0 4px rgba(0,0,0,.5), 0 18px 50px rgba(0,0,0,.7);
+}
+/* image-rendering pixelated: o retrato é voxel, tem que ficar com a
+   borda dura mesmo ao escalar — suavizar mataria a leitura pixel art */
+#dlg-portrait canvas{width:100%; height:100%; image-rendering:pixelated}
+
+/* o conjunto retrato + fala, limitado para a linha não ficar longa
+   demais — texto muito largo cansa a leitura em voz de diálogo */
+#dlg-body{
+  flex:0 1 auto; min-width:0; max-width:min(900px, 68vw);
+  display:flex; flex-direction:column; justify-content:center;
+}
+#dlg-name{
+  font-size:clamp(15px, 1.7vw, 22px); font-weight:900; letter-spacing:4px;
+  margin-bottom:10px; text-shadow:0 2px 14px rgba(0,0,0,.9);
+}
+#dlg-text{
+  font-size:clamp(20px, 2.5vw, 34px); line-height:1.42; color:#fff;
+  white-space:pre-wrap; font-weight:600;
+  text-shadow:0 3px 18px rgba(0,0,0,.95), 0 1px 3px rgba(0,0,0,.8);
+  min-height:1.4em;
+}
+#dlg-hint{
+  font-size:clamp(10px, 1vw, 13px); opacity:.75; letter-spacing:1.5px;
+  margin-top:18px; color:#9fb0c8;
+}
+#dlg-hint kbd{
+  background:rgba(255,255,255,.14); color:var(--ink);
+  border:1px solid rgba(255,255,255,.28); box-shadow:none;
+  border-radius:4px; padding:2px 7px; font-size:.92em; font-weight:800;
+}
+
+/* telas estreitas: o retrato sobe e tudo centraliza em coluna */
+@media (max-width:640px){
+  #dialogue{flex-direction:column; text-align:center}
+  #dlg-body{max-width:100%; align-items:center}
+}
+
+/* ---------------------- o Plano da AGI ---------------------- */
+#plan-screen{
+  position:fixed; inset:0; z-index:47; display:flex; align-items:center; justify-content:center;
+  background:rgba(3,6,12,.78); backdrop-filter:blur(10px);
+}
+.plan-panel{max-width:min(880px,94vw); padding:34px 40px}
+#plan-grid{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:22px;
+}
+@media (max-width:720px){ #plan-grid{grid-template-columns:repeat(2,1fr)} }
+.plan-item{
+  border:1px solid var(--stroke); border-radius:12px; padding:14px 10px;
+  background:rgba(255,255,255,.03); text-align:center; position:relative;
+  transition:transform .2s;
+}
+.plan-item.got{
+  border-color:var(--good); background:linear-gradient(180deg,rgba(61,220,132,.16),rgba(61,220,132,.04));
+}
+/* peça recém-conquistada pulsa uma vez: o jogador precisa VER o ganho */
+.plan-item.fresh{animation:planPop .9s ease-out 2}
+@keyframes planPop{0%{transform:scale(1)}35%{transform:scale(1.09)}100%{transform:scale(1)}}
+.plan-icon{font-size:30px; line-height:1; filter:grayscale(1) opacity(.35)}
+.plan-item.got .plan-icon{filter:none}
+.plan-label{font-size:11px; font-weight:900; letter-spacing:1.5px; margin-top:8px}
+.plan-item.got .plan-label{color:var(--good)}
+.plan-sub{font-size:9.5px; opacity:.5; margin-top:3px; line-height:1.35}
+.plan-check{
+  position:absolute; top:7px; right:9px; font-size:13px; color:var(--good);
+  opacity:0; transition:opacity .3s;
+}
+.plan-item.got .plan-check{opacity:1}
+#plan-next{
+  font-size:12.5px; opacity:.75; margin-bottom:20px; line-height:1.6;
+  border-top:1px solid var(--stroke); padding-top:16px;
+}
+#plan-next b{color:var(--accent)}
+
+/* ---------------------- marcador de portal ---------------------- */
+#portal-prompt{
+  position:fixed; left:50%; bottom:130px; transform:translateX(-50%);
+  z-index:29; text-align:center; pointer-events:none;
+  background:rgba(6,10,17,.86); border:1px solid var(--stroke);
+  border-left:3px solid var(--accent); border-radius:10px; padding:10px 20px;
+}
+#portal-prompt .pp-title{font-size:14px; font-weight:900; letter-spacing:2px; color:var(--accent)}
+#portal-prompt .pp-sub{font-size:11px; opacity:.65; margin-top:3px}
+#portal-prompt kbd{
+  background:rgba(255,255,255,.16); color:var(--ink);
+  border:1px solid rgba(255,255,255,.3); box-shadow:none;
+  border-radius:4px; padding:1px 6px; font-size:10px; font-weight:800;
+}
+
+/* ---------------------- trava do míssil teleguiado ---------------------- */
+/*
+ * O quadro de trava fica ONDE O INIMIGO ESTÁ na tela, não no centro: é
+ * ele que diz "é NESSE que vai". Some quando nada está travado, então a
+ * ausência também informa.
+ */
+#lock-on{
+  position:fixed; z-index:12; width:100px; height:100px;
+  margin:-50px 0 0 -50px; pointer-events:none;
+  animation:lockIn .16s ease-out;
+}
+@keyframes lockIn{from{transform:scale(1.6); opacity:0}to{transform:scale(1); opacity:1}}
+#lock-on svg{overflow:visible}
+#lock-on path{fill:none; stroke:var(--bad); stroke-width:4; stroke-linecap:round}
+#lock-on circle{fill:var(--bad)}
+#lock-on.ready path{stroke:var(--accent2)}
+#lock-on.ready circle{fill:var(--accent2)}
+#lock-label{
+  position:absolute; left:50%; top:104%; transform:translateX(-50%);
+  font-size:9px; font-weight:900; letter-spacing:2px; color:var(--bad);
+  text-shadow:0 2px 8px rgba(0,0,0,.9); white-space:nowrap;
+}
+#lock-on.ready #lock-label{color:var(--accent2)}
+
+/* medidor de recarga, ao lado do velocímetro */
+#missile-gauge{
+  position:fixed; right:26px; bottom:26px; z-index:11; width:132px;
+  pointer-events:none; text-align:right;
+}
+#mg-bar{
+  height:7px; border:1px solid var(--stroke); border-radius:999px;
+  background:rgba(3,6,12,.7); overflow:hidden;
+}
+#mg-fill{
+  height:100%; width:0%; border-radius:999px;
+  background:linear-gradient(90deg,#25d0ff,#7ce7ff); transition:width .1s linear;
+}
+#mg-fill.full{background:linear-gradient(90deg,#3ddc84,#9cffc8)}
+#mg-label{
+  font-size:9px; font-weight:800; letter-spacing:2px; opacity:.7; margin-top:4px;
+}
+#mg-label kbd{
+  background:rgba(255,255,255,.14); color:var(--ink); box-shadow:none;
+  border:1px solid rgba(255,255,255,.25); border-radius:3px;
+  padding:0 4px; font-size:9px;
+}

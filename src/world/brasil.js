@@ -662,10 +662,35 @@ export class BrazilLandmarks {
     this.group.add(halo);
     this.nightGlows.push({ sprite: halo, pico: 0.5 });
 
-    // colisão: bloco e pilar (o olho está alto demais para atrapalhar)
+    /*
+     * ---- colisão ----
+     * O museu é um bloco NO AR sobre pilotis, e dá para andar por baixo —
+     * é o gesto que define o prédio. A caixa antes ia do chão ao topo e
+     * fechava o vão inteiro: o pilotis existia no desenho e não na
+     * colisão, então o jogador batia numa parede invisível de 84 m.
+     *
+     * Agora a caixa começa na face inferior da laje (6,2 − 1,1/2 ≈ 5,65)
+     * e o que barra lá embaixo são os 14 pilotis, um a um.
+     *
+     * O pilar amarelo não entra: ele nasce em y ≈ 6,4, apoiado na laje,
+     * e nunca chega ao chão.
+     */
     const c = Math.cos(MON.rot), s = Math.sin(MON.rot);
+    const SOB_LAJE = 5.6;
     this.col.addBox(MON.x, MON.z, Math.abs(42 * c) + Math.abs(20 * s),
-      Math.abs(42 * s) + Math.abs(20 * c), solo + 13.7, 'museu');
+      Math.abs(42 * s) + Math.abs(20 * c), solo + 13.7, 'museu', solo + SOB_LAJE);
+
+    // os pilotis: 7 pórticos de 2,2 m, nas mesmas posições do desenho
+    for (let i = -3; i <= 3; i++) {
+      for (const lz of [-13, 13]) {
+        const lx = i * 12;
+        this.col.addCircle(
+          MON.x + lx * c + lz * s,
+          MON.z - lx * s + lz * c,
+          1.25, solo + SOB_LAJE, 'pilotis',
+        );
+      }
+    }
     MON.y = solo;
     MON.olhoY = solo + OLHO_Y;
   }

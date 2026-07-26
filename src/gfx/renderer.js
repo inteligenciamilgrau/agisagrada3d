@@ -42,6 +42,11 @@ export class Graphics {
       CAMERA.fov, window.innerWidth / window.innerHeight, CAMERA.near, CAMERA.far,
     );
     this.camera.position.set(0, 8, 20);
+    /** Distância de renderização: encurta o far plane da câmera. */
+    this.setFar = (dist) => {
+      this.camera.far = dist;
+      this.camera.updateProjectionMatrix();
+    };
 
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.pmrem.compileEquirectangularShader();

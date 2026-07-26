@@ -1,4 +1,8 @@
-import { PRESETS, DEFAULT_PRESET, POPULATIONS, DEFAULT_POPULATION } from './config.js';
+import {
+  PRESETS, DEFAULT_PRESET, POPULATIONS, DEFAULT_POPULATION,
+  RENDER_DISTANCES, DEFAULT_RENDER_DISTANCE,
+} from './config.js';
+import { VOLUMES, DEFAULT_VOLUME } from './sys/audio.js';
 
 /**
  * Preferências do jogador, guardadas no localStorage do navegador.
@@ -15,6 +19,8 @@ const PADRAO = {
   cycleMode: 'ciclo',                   // [13] ciclo | dia | noite
   presetIndex: DEFAULT_PRESET,          // qualidade gráfica
   populationIndex: DEFAULT_POPULATION,  // [61] quantidade de gente e carros
+  renderDistanceIndex: DEFAULT_RENDER_DISTANCE,  // alcance de renderização
+  volumeIndex: DEFAULT_VOLUME,                   // volume dos efeitos
 };
 
 const CICLOS = ['ciclo', 'dia', 'noite'];
@@ -37,6 +43,14 @@ function sanear(bruto) {
   if (Number.isInteger(bruto.populationIndex)
       && bruto.populationIndex >= 0 && bruto.populationIndex < POPULATIONS.length) {
     s.populationIndex = bruto.populationIndex;
+  }
+  if (Number.isInteger(bruto.renderDistanceIndex)
+      && bruto.renderDistanceIndex >= 0 && bruto.renderDistanceIndex < RENDER_DISTANCES.length) {
+    s.renderDistanceIndex = bruto.renderDistanceIndex;
+  }
+  if (Number.isInteger(bruto.volumeIndex)
+      && bruto.volumeIndex >= 0 && bruto.volumeIndex < VOLUMES.length) {
+    s.volumeIndex = bruto.volumeIndex;
   }
   return s;
 }

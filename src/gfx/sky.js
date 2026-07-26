@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { DAY, QUALITY } from '../config.js';
+import { DAY, QUALITY, CAMERA } from '../config.js';
 import { clamp, invLerp, formatClock } from '../utils.js';
 import { starTexture } from './textures.js';
 
@@ -110,7 +110,36 @@ export class SkySystem {
     // ---------------------------------------------------------- névoa
     this.scene.fog = new THREE.Fog(0xbdd6ee, QUALITY.fogNear, QUALITY.fogFar);
 
+    /** Distância de renderização em vigor (ver `setRenderDistance`). */
+    this.distMax = CAMERA.far;
+    this.distLua = 1300;
+
     this.update(0, new THREE.Vector3());
+  }
+
+  /**
+   * Ajusta o céu à distância de renderização escolhida.
+   *
+   * O domo, as estrelas e a lua vivem em raios fixos (1000, 1400 e
+   * 1300 m). Encurtar o far plane sem mexer neles recorta o céu — e o
+   * que aparece atrás do mundo é o vazio do buffer, não azul. Por isso
+   * os três encolhem junto, sempre com folga dentro do far.
+   *
+   * A NÉVOA não é ajustada aqui. `update()` reescreve `scene.fog` a cada
+   * quadro a partir de `QUALITY.fogNear/fogFar` (a cor muda com a hora do
+   * dia), então mexer no objeto direto seria apagado no quadro seguinte.
+   * Quem manda na névoa é `QUALITY`, e quem escreve lá é o `game.js`.
+   *
+   * @param {number} dist  far plane pedido
+   */
+  setRenderDistance(dist) {
+    this.distMax = dist;
+
+    // domo: meia-extensão = escala/2, mantida em 70% do far
+    this.sky.scale.setScalar(dist * 1.4);
+    // estrelas: nasceram num raio de 1400
+    this.stars.scale.setScalar((dist * 0.62) / 1400);
+    this.distLua = dist * 0.5;
   }
 
   _makeStars() {
@@ -244,7 +273,7 @@ export class SkySystem {
     this.stars.material.opacity = clamp((n - 0.35) / 0.5, 0, 1) * 0.95;
     this.moon.visible = this.stars.material.opacity > 0.02;
     if (this.moon.visible) {
-      this.moon.position.copy(this.sunDir).multiplyScalar(-1300).add(focus);
+      this.moon.position.copy(this.sunDir).multiplyScalar(-this.distLua).add(focus);
       this.moon.material.opacity = this.stars.material.opacity;
     }
 

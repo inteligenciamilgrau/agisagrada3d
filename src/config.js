@@ -38,14 +38,39 @@ export const PLAYER = {
   radius: 0.42,
   height: 1.78,
   eye: 1.62,
-  walkSpeed: 4.2,
-  runSpeed: 9.0,               // [30] Shift
-  accel: 42,
+  /*
+   * Velocidade a pé.
+   *
+   * Era 4,2 / 9,0 — bom para um jogo de entregas num quarteirão. A
+   * campanha espalhou a ação por 1,4 km de mapa e trouxe chefões que
+   * andam a 9 m/s: no ritmo antigo o Bob era mais lento que a própria
+   * ameaça, e atravessar a cidade virava espera.
+   */
+  walkSpeed: 6.4,
+  runSpeed: 14.5,              // [30] Shift
+  accel: 58,                   // acompanha: sem isso a arrancada fica mole
   jumpSpeed: 7.4,              // [36] espaço
   gravity: 26,
   turnSmooth: 14,
-  maxHearts: 3,                // [33]
+  /*
+   * [33] Corações.
+   *
+   * Eram 3, herdados do jogo de entregas — ali o risco era atropelamento
+   * ocasional e três bastavam. A campanha mudou o jogo: agora são ondas
+   * de capangas, canetadas teleguiadas e chefões de 55 m, tudo a céu
+   * aberto ao mesmo tempo. Com 3 corações a fase acabava antes de o
+   * jogador entender o padrão do chefão, que é justamente a graça.
+   */
+  maxHearts: 6,
   invulnTime: 1.6,             // segundos de invulnerabilidade após levar dano
+  /*
+   * Regeneração: sem apanhar por `regenDelay` segundos, volta um coração
+   * a cada `regenTime`. Recompensa quem recua e se reposiciona, em vez
+   * de punir para sempre um erro dos primeiros segundos — e não vale
+   * nada durante a briga, porque no meio dela você apanha antes.
+   */
+  regenDelay: 9,
+  regenTime: 6,
   /**
    * [60] Modo Deus (tecla M): voo livre pelo mapa, sem gravidade nem colisão.
    * Rápido de propósito — serve para atravessar os 1,4 km do mapa e olhar os
@@ -398,3 +423,24 @@ export const PRESETS = [
 
 /** Perfil inicial (índice em PRESETS): MÉDIA, que roda liso na maioria das máquinas. */
 export const DEFAULT_PRESET = 1;
+
+
+/**
+ * Distância de renderização (tecla `L`).
+ *
+ * Encurta o far plane da câmera e traz a névoa para perto, junto. Os
+ * dois andam amarrados de propósito: cortar o far sem a névoa faz o
+ * mundo sumir num corte reto, e a névoa sem o corte só pinta por cima
+ * do que continua sendo desenhado.
+ *
+ * O céu acompanha. O domo, as estrelas e a lua são reposicionados em
+ * função desta distância — se ficarem além do far plane, o céu é
+ * recortado e a tela fica preta atrás do mundo.
+ */
+export const RENDER_DISTANCES = [
+  { id: 'curta', label: 'CURTA', dist: 700,  fogNear: 110 },
+  { id: 'media', label: 'MÉDIA', dist: 1300, fogNear: 230 },
+  { id: 'longa', label: 'LONGA', dist: 1900, fogNear: 330 },
+  { id: 'total', label: 'TOTAL', dist: 2600, fogNear: 380 },
+];
+export const DEFAULT_RENDER_DISTANCE = 2;

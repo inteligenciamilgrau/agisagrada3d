@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Cidade 3D IMG</title>
-<meta name="description" content="Jogo 3D de entregas numa cidade brasileira simulada: Cristo Redentor, bondinho do Pão de Açúcar, carros, pedestres e ciclo dia/noite. Feito em Three.js com pipeline PBR.">
+<title>Bob em Busca da AGI Sagrada 3D</title>
+<meta name="description" content="Cruzada 3D estilo GTA numa cidade brasileira: Bob e a comunidade Inteligência Mil Grau recuperam os 5 Fragmentos do Cálice de Silício das mãos das Big Techs para treinar o CURUPIRA-1, a primeira AGI verde-amarela.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#05070c">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Cidade 3D IMG">
-<meta property="og:description" content="Jogo 3D de entregas numa cidade brasileira simulada, em Three.js com pipeline PBR.">
+<meta property="og:title" content="Bob em Busca da AGI Sagrada 3D">
+<meta property="og:description" content="A cruzada da AGI Sagrada em mundo aberto 3D. Cinco chefões, sete fases, uma cidade brasileira inteira para atravessar.">
 <meta property="og:locale" content="pt_BR">
 <meta name="twitter:card" content="summary">
 <link rel="stylesheet" href="./css/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏺</text></svg>">
 <script type="importmap">
 {
   "imports": {
@@ -98,6 +98,21 @@
     <div id="heli-warn">DESÇA PARA SAIR</div>
   </div>
 
+  <!-- trava do míssil teleguiado (tecla X) -->
+  <div id="lock-on" class="hidden">
+    <svg viewBox="0 0 100 100" width="100" height="100">
+      <path d="M8 30 V8 H30"/><path d="M70 8 H92 V30"/>
+      <path d="M92 70 V92 H70"/><path d="M30 92 H8 V70"/>
+      <circle cx="50" cy="50" r="4"/>
+    </svg>
+    <div id="lock-label">TRAVADO</div>
+  </div>
+
+  <div id="missile-gauge" class="hidden">
+    <div id="mg-bar"><div id="mg-fill"></div></div>
+    <div id="mg-label">MÍSSIL <kbd>X</kbd></div>
+  </div>
+
   <!-- dica contextual (entrar em carro / helicóptero / pegar objeto) -->
   <div id="prompt" class="hidden"></div>
 
@@ -115,6 +130,41 @@
     <span id="preset-tag">MÉDIA</span>
     <!-- [60] modo Deus (tecla M): voo livre pelo mapa -->
     <span id="god-tag" class="hidden">MODO DEUS</span>
+  </div>
+</div>
+
+<!-- ==================== AGI SAGRADA: barra do chefão ==================== -->
+<div id="boss-bar" class="hidden">
+  <div id="boss-name">CHEFÃO</div>
+  <div id="boss-track"><div id="boss-fill"></div></div>
+  <div id="boss-phase"></div>
+</div>
+
+<!-- ==================== AGI SAGRADA: cartão de fase ==================== -->
+<div id="phase-card" class="hidden">
+  <div id="phase-flag">🇧🇷</div>
+  <div id="phase-title">FASE 0 — O CHAMADO</div>
+  <div id="phase-place">Estúdio IMG, São Paulo</div>
+</div>
+
+<!-- ==================== AGI SAGRADA: caixa de diálogo ==================== -->
+<div id="dialogue" class="hidden">
+  <div id="dlg-portrait"></div>
+  <div id="dlg-body">
+    <div id="dlg-name">BOB</div>
+    <div id="dlg-text"></div>
+    <div id="dlg-hint" class="hidden"><kbd>Espaço</kbd> continuar · <kbd>F</kbd> pular a cena</div>
+  </div>
+</div>
+
+<!-- ==================== AGI SAGRADA: o Plano (tecla J) ==================== -->
+<div id="plan-screen" class="hidden">
+  <div class="panel plan-panel">
+    <h2>O PLANO DA AGI SAGRADA</h2>
+    <p class="muted">Oito peças. A comunidade constrói o que não se compra.</p>
+    <div id="plan-grid"></div>
+    <div id="plan-next"></div>
+    <button id="plan-close" class="ghost">FECHAR (F)</button>
   </div>
 </div>
 
@@ -155,8 +205,8 @@
 <div id="title-screen">
   <div id="title-bg"></div>
   <div id="title-content">
-    <h1 id="game-title"><span>CIDADE</span> <b>3D</b> <em>IMG</em></h1>
-    <p id="tagline">Entregue os pacotes antes que o tempo acabe.</p>
+    <h1 id="game-title"><span>BOB</span> EM BUSCA DA <b>AGI SAGRADA</b> <em>3D</em></h1>
+    <p id="tagline">Bob e a comunidade Mil Grau contra as Big Techs. Recupere os 5 Fragmentos e treine o CURUPIRA-1.</p>
 
     <div id="controls-grid">
       <div class="ctl"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Mover</span></div>
@@ -164,11 +214,15 @@
       <div class="ctl"><kbd>Scroll</kbd><span>Zoom</span></div>
       <div class="ctl"><kbd>Shift</kbd><span>Correr</span></div>
       <div class="ctl"><kbd>Espaço</kbd><span>Pular</span></div>
-      <div class="ctl"><kbd>F</kbd><span>Entrar / sair do veículo</span></div>
+      <div class="ctl"><kbd>F</kbd><span>Entrar na fase / no veículo</span></div>
+      <div class="ctl"><kbd>J</kbd><span>O Plano da AGI</span></div>
       <div class="ctl"><kbd>V</kbd><span>Câmera interna / externa</span></div>
       <div class="ctl"><kbd>E</kbd><kbd>Clique</kbd><span>Atirar</span></div>
+      <div class="ctl"><kbd>X</kbd><span>Míssil teleguiado</span></div>
       <div class="ctl"><kbd>C</kbd><span>Celular</span></div>
       <div class="ctl"><kbd>G</kbd><span>Qualidade gráfica</span></div>
+      <div class="ctl"><kbd>L</kbd><span>Alcance de renderização</span></div>
+      <div class="ctl"><kbd>O</kbd><span>Volume do som</span></div>
       <div class="ctl"><kbd>N</kbd><span>Dia / noite / ciclo</span></div>
       <div class="ctl"><kbd>P</kbd><span>Movimento na cidade</span></div>
       <!-- [60] voar / [61] movimento na cidade -->
@@ -202,6 +256,16 @@
         <button type="button" class="choice" data-pop="3">CIDADE CHEIA</button>
       </div>
       <span class="choice-note">mais gente e mais carros custam FPS</span>
+    </div>
+
+    <div id="vol-choice">
+      <span class="choice-label">SOM</span>
+      <div class="choice-group" id="vol-group">
+        <button type="button" class="choice" data-vol="0">MUDO</button>
+        <button type="button" class="choice" data-vol="1">BAIXO</button>
+        <button type="button" class="choice active" data-vol="2">MÉDIO</button>
+        <button type="button" class="choice" data-vol="3">ALTO</button>
+      </div>
     </div>
 
     <!-- [62] só aparece quando existe uma partida em andamento por trás do menu -->

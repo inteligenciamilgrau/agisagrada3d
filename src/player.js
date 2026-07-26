@@ -1,26 +1,32 @@
 import * as THREE from 'three';
 import { PLAYER, CURB_H } from './config.js';
-import { clamp, damp, dampAngle, makeRng } from './utils.js';
-import { Human } from './ent/human.js';
+import { clamp, damp, dampAngle } from './utils.js';
+import { VoxelFigure } from './ent/voxel.js';
+import { HUMANOIDES } from './ent/voxeldef.js';
+import { Loro } from './ent/loro.js';
+import { SaciBot } from './ent/sacibot.js';
 
 /**
  * [14] Jogador em terceira pessoa. [11] WASD relativo à câmera,
  * [30] Shift corre, [36] espaço pula, [31] colide com prédios/postes/árvores.
+ *
+ * O jogador é o **Bob "Indiana" Milgrau**: boneco voxel com jaqueta de
+ * couro, fedora, óculos e o Prompt Mágico na mão. Ele usa o mesmo
+ * `VoxelFigure` dos inimigos e expõe a mesma API do antigo `Human`
+ * (`root`, `pivot`, `update`, `carrying`), então nada em volta mudou.
  */
 export class Player {
   constructor(scene, collision) {
     this.col = collision;
 
-    const rng = makeRng(2024);
-    this.human = new Human({
-      rng,
-      shirt: 0x1d6fd0,          // uniforme de entregador
-      pants: 0x2a2f38,
-      scale: 1.02,
-      fullShadow: true,         // o jogador está sempre em primeiro plano
-    });
+    this.human = new VoxelFigure(HUMANOIDES.bob);
     this.human.root.name = 'player';
     scene.add(this.human.root);
+
+    // o Loro Estocástico voa junto — mascote da comunidade, não enfeite
+    this.loro = new Loro(scene);
+    // o Saci-Bot só entra depois que o Ilon cai (peça INVESTIMENTO)
+    this.saci = new SaciBot(scene);
 
     this.pos = new THREE.Vector3(0, CURB_H, 0);
     this.vy = 0;
@@ -36,6 +42,10 @@ export class Player {
     this.human.pivot.add(this.pack);
 
     this._move = new THREE.Vector3();
+
+    /** Avisos para quem faz barulho (ver `game.js`). */
+    this.onPulo = null;
+    this.onPousar = null;
   }
 
   _makePackage() {
@@ -70,12 +80,29 @@ export class Player {
   setVisible(v) {
     this.visible = v;
     this.human.root.visible = v;
+    this.loro.visible = v;
+    if (!v) this.saci.root.visible = false;
+    else if (this.saci.ativo) this.saci.root.visible = true;
+  }
+
+  /**
+   * Esconde só o CORPO, mantendo o Loro em cena.
+   *
+   * É o que a primeira pessoa precisa: dentro da fase a câmera fica na
+   * cabeça do Bob, então o corpo dele atrapalharia — mas o papagaio
+   * continua voando ao lado, visível, que é metade da graça.
+   */
+  setCorpoVisivel(v) {
+    this.human.root.visible = v;
   }
 
   teleport(x, z, y = null) {
     this.pos.set(x, y ?? this.col.groundHeightAt(x, z), z);
     this.vy = 0;
     this.human.root.position.copy(this.pos);
+    // os companheiros reaparecem junto, sem atravessar o mapa voando até lá
+    this.loro._iniciado = false;
+    this.saci.reposicionar();
   }
 
   /** Altura do piso sob o jogador (calçada, ponte, laje de prédio ou água). */
@@ -91,6 +118,8 @@ export class Player {
   update(dt, input, camYaw, frozen = false) {
     if (frozen) {
       this.human.update(dt, 0);
+      this.loro.update(dt, this.pos, this.yaw, 0);
+      this.saci.update(dt, this.pos, this.yaw);
       return;
     }
 
@@ -129,6 +158,7 @@ export class Player {
     if (this.grounded && input.jumping && !this.inWater) {
       this.vy = PLAYER.jumpSpeed;
       this.grounded = false;
+      if (this.onPulo) this.onPulo();
     }
     this.vy -= PLAYER.gravity * dt;
 
@@ -137,15 +167,61 @@ export class Player {
       this.pos.x += this._move.x * this.speed * dt;
       this.pos.z += this._move.z * this.speed * dt;
     }
+    const yAntes = this.pos.y;
     this.pos.y += this.vy * dt;
+    /*
+     * A velocidade de queda tem que ser lida AQUI.
+     *
+     * Logo abaixo, o assentamento no piso (a correção do deck do Pão de
+     * Açúcar) zera `vy` antes que a checagem de pouso rode — e com ela
+     * some a única informação que separa descer um meio-fio de despencar
+     * de 40 m. Guardar antes é o que deixa o baque ter peso.
+     */
+    const quedaAgora = Math.max(0, -this.vy);
+
+    /*
+     * ASSENTA NO PISO ANTES DE RESOLVER OS SÓLIDOS.
+     *
+     * Sem isto, cair rápido sobre uma laje joga o jogador para FORA dela.
+     * A sequência do bug: descendo a 30 m/s ele afunda meio metro num
+     * quadro só e termina abaixo do topo da caixa que sustenta a laje;
+     * `resolveCircle` ignora sólidos com topo abaixo dos pés, mas com
+     * tolerância de 6 cm — muito menos que o meio metro percorrido. A
+     * caixa volta a valer, ele é empurrado horizontalmente para fora do
+     * deck e cai lá embaixo, atravessando o chão que estava pisando.
+     *
+     * Foi assim que se perdia o deck do Pão de Açúcar chegando de cima.
+     * É o mesmo bug que o helicóptero já teve ao pousar em laje, e a
+     * correção é a mesma: primeiro assenta em quem estava por baixo,
+     * depois resolve os sólidos.
+     *
+     * A condição "já vinha por cima" é necessária: sem ela, esbarrar na
+     * lateral de uma laje teleportaria o jogador para cima dela.
+     */
+    const pisoAntes = this._floorAt(this.pos.x, this.pos.z);
+    if (yAntes >= pisoAntes - 0.05 && this.pos.y < pisoAntes) {
+      this.pos.y = pisoAntes;
+      this.vy = 0;
+    }
 
     // [31] prédios, postes, árvores e guarda-corpos empurram o jogador
     this.col.resolveCircle(this.pos, PLAYER.radius);
 
     const floor = this._floorAt(this.pos.x, this.pos.z);
     if (this.pos.y <= floor) {
+      /*
+       * A força do baque vem da velocidade de QUEDA lida antes de zerar.
+       * Descer um meio-fio e despencar de 40 m produzem o mesmo evento
+       * "encostou no chão"; só a velocidade separa os dois.
+       */
       this.pos.y = floor;
       this.vy = 0;
+      // só conta como pouso quem vinha CAINDO: andando no plano a
+      // gravidade também empurra para baixo todo quadro, e sem este
+      // limiar cada passo viraria um baque
+      if (!this.grounded && quedaAgora > 1.2 && this.onPousar) {
+        this.onPousar(Math.min(1, quedaAgora / 22));
+      }
       this.grounded = true;
     } else {
       this.grounded = false;
@@ -155,6 +231,8 @@ export class Player {
     this.human.root.position.copy(this.pos);
     this.human.root.rotation.y = this.yaw;
     this.human.update(dt, this.grounded ? this.speed : this.speed * 0.35);
+    this.loro.update(dt, this.pos, this.yaw, this.speed);
+    this.saci.update(dt, this.pos, this.yaw);
 
     // afunda um pouco na água
     if (this.inWater) this.human.root.position.y -= 0.12;
@@ -203,6 +281,8 @@ export class Player {
     this.human.root.position.copy(this.pos);
     this.human.root.rotation.y = this.yaw;
     this.human.update(dt, 0);              // pernas paradas: está flutuando
+    this.loro.update(dt, this.pos, this.yaw, PLAYER.flySpeed * 0.3);
+    this.saci.update(dt, this.pos, this.yaw);
   }
 
   /** Ponto que a câmera acompanha (altura dos ombros). */

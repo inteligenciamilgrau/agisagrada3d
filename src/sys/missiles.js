@@ -29,7 +29,9 @@ export class MissileSystem {
 
     this.onHitPed = null;
     this.onHitCar = null;
-    this.targets = { peds: null, cars: null };
+    this.targets = { peds: null, cars: null, foes: null };
+    /** Inimigo da campanha atingido por míssil (direto ou pelo raio). */
+    this.onHitFoe = null;
 
     const modelo = this._buildModel();
     this.list = [];
@@ -99,6 +101,15 @@ export class MissileSystem {
     this.targets.peds = peds;
     this.targets.cars = cars;
   }
+
+  /**
+   * Inimigos da fase em andamento.
+   *
+   * Existe para o chefão colossal: um boneco de 55 m não é pedestre nem
+   * carro, e é o único alvo da fase a céu aberto que o míssil precisa
+   * acertar.
+   */
+  setFoes(foes) { this.targets.foes = foes; }
 
   get canFire() { return this.cooldown <= 0; }
 
@@ -182,6 +193,16 @@ export class MissileSystem {
         if (t !== null && (!best || t < best.t)) best = { t, kind: campo, alvo: e };
       }
     };
+    // inimigos da campanha primeiro: o colosso é o alvo grande da cena
+    if (this.targets.foes) {
+      for (const f of this.targets.foes) {
+        if (!f.vivo) continue;
+        const cc = f.root.position;
+        const t = this._segEsfera(from, dir, dist,
+          cc.x, cc.y + (f.alturaAlvo || 1), cc.z, f.raioAcerto || 1.5);
+        if (t !== null && (!best || t < best.t)) best = { t, kind: 'foe', alvo: f };
+      }
+    }
     alvo(this.targets.peds?.peds, 'ped', 0.7,
       (p) => ({ x: p.human.root.position.x, y: p.human.root.position.y + PED.height * 0.55, z: p.human.root.position.z }));
     alvo(this.targets.cars?.cars, 'car', 1.7,
@@ -226,6 +247,23 @@ export class MissileSystem {
   _detona(m, ponto) {
     this.fx.explode(ponto, MISSILE.blastFx);
     this._apaga(m);
+
+    /*
+     * Inimigos da campanha entram pelo RAIO, não só pelo acerto direto.
+     * No chefão colossal isso é o que torna a luta justa: acertar em
+     * cheio um alvo de 55 m que anda enquanto você voa seria pedir
+     * demais — a explosão perto do corpo já conta.
+     */
+    if (this.targets.foes && this.onHitFoe) {
+      for (const f of this.targets.foes.slice()) {
+        if (!f.vivo) continue;
+        const c = f.root.position;
+        const alvoY = c.y + (f.alturaAlvo || 1);
+        const d = Math.hypot(c.x - ponto.x, alvoY - ponto.y, c.z - ponto.z);
+        if (d > (f.raioAcerto || 1.5) + MISSILE.blastCar) continue;
+        this.onHitFoe(f, ponto);
+      }
+    }
 
     const peds = this.targets.peds ? this.targets.peds.peds.slice() : [];
     for (const ped of peds) {

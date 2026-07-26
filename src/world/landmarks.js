@@ -91,6 +91,47 @@ export class Landmarks {
     this.road.build();          // depois da estátua: usa a cota do mirante
     this._cableCar();           // [54]
     this._heliport(city);       // [43]
+
+    /*
+     * A ROCHA vira chão — e isto vem por ÚLTIMO de propósito.
+     *
+     * Os morros só tinham anéis de colisão (que barram) e nenhuma
+     * plataforma (que sustenta). Resultado: no topo do Pão de Açúcar,
+     * fora do deck da estação, o chão respondia o terreno do nível do
+     * mar — o jogador atravessava a pedra e despencava 150 m.
+     *
+     * `groundHeightAt` devolve a PRIMEIRA plataforma que responde, então
+     * registrar a encosta depois de tudo faz o deck da estação, a
+     * estrada e o mirante continuarem ganhando onde existem; a rocha só
+     * atende onde não há nada construído.
+     *
+     * O Corcovado fica de fora: lá a colisão é amarrada à borda interna
+     * da estrada em espiral, um equilíbrio que já custou caro para
+     * fechar. Mexer nele para resolver um problema que é do Pão de
+     * Açúcar seria trocar um bug por outro.
+     */
+    this._mountainFloor(URCA, 0.85);
+    this._mountainFloor(PAO, 0.95);
+  }
+
+  /** Superfície caminhável de um morro (o inverso do perfil do cone). */
+  _mountainFloor(spec, roundness) {
+    this.col.addPlatform(
+      spec.x - spec.r, spec.z - spec.r, spec.x + spec.r, spec.z + spec.r,
+      (x, z, refY) => {
+        const r = Math.hypot(x - spec.x, z - spec.z);
+        if (r >= spec.r) return null;              // fora do morro: é o terreno
+        /*
+         * `max` com o terreno é obrigatório: na saia do morro o perfil
+         * devolve `baseY`, que fica 6 m ABAIXO do relevo natural. Sem
+         * isto o jogador afundaria no chão ao encostar na base.
+         */
+        const y = Math.max(mountainSurfaceY(spec, roundness, x, z), terrainHeight(x, z));
+        // quem está bem abaixo da encosta está passando por fora dela
+        if (refY != null && refY < y - 2.5) return null;
+        return y;
+      },
+    );
   }
 
   // ------------------------------------------------------------------ montanhas
@@ -686,8 +727,22 @@ export class Landmarks {
       return y;
     });
 
-    // parapeito: só a partir de onde a rampa já levantou do chão, para dar
-    // para entrar nela pelos lados na parte baixa
+    /*
+     * Parapeito: só a partir de onde a rampa já levantou do chão, para
+     * dar para entrar nela pelos lados na parte baixa.
+     *
+     * ---- POR QUE A COLISÃO É BARRA E NÃO POSTE ----
+     * Antes cada montante virava um círculo de 55 cm de raio. O poste
+     * que se VÊ tem 14 cm; o que BARRA tinha 110 cm de diâmetro. Como
+     * eles ficam nas duas bordas de uma rampa de 4,8 m, sobrava só
+     * 2,86 m de passagem — e o jogador que encostasse na lateral era
+     * parado por nada visível. Parede invisível, exatamente.
+     *
+     * Agora a colisão é uma barra FINA e contínua (20 cm), em trechos
+     * curtos que acompanham a inclinação. Barra em vez de bolas mantém
+     * o parapeito intransponível (bola espaçada deixaria passar pelo
+     * meio) e devolve quase um metro de passagem: 3,76 m livres.
+     */
     const guarda = [];
     for (let x = x0 + 11; x <= x1 - 0.5; x += 1.5) {
       const y = alturaEm(x);
@@ -695,7 +750,18 @@ export class Landmarks {
         const post = new THREE.BoxGeometry(0.14, 1.05, 0.14);
         post.translate(x - st.x, y - st.y + 0.52, s * rampHalfW);
         guarda.push(post);
-        this.col.addCircle(x, st.z + s * rampHalfW, 0.55, y + 1.05, 'rail', y - 0.7);
+      }
+    }
+    const TRECHO = 3;
+    for (let x = x0 + 11; x < x1; x += TRECHO) {
+      const xa = x, xb = Math.min(x1, x + TRECHO);
+      const ya = alturaEm(xa), yb = alturaEm(xb);
+      for (const s of [-1, 1]) {
+        this.col.addBox(
+          (xa + xb) / 2, st.z + s * rampHalfW,
+          (xb - xa) / 2, 0.1,
+          Math.max(ya, yb) + 1.05, 'rail', Math.min(ya, yb) - 0.7,
+        );
       }
     }
     const rail = new THREE.Mesh(mergeGeometries(guarda, false), steel);

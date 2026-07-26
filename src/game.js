@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   PLAYER, CAMERA, CAR, HELI, GAME, DAY, CURB_H, QUALITY,
   PRESETS, DEFAULT_PRESET, POPULATIONS, DEFAULT_POPULATION, CABLE,
+  RENDER_DISTANCES, DEFAULT_RENDER_DISTANCE,
 } from './config.js';
 import { clamp, damp, dampAngle, dist2D, formatTime, angleDelta } from './utils.js';
 
@@ -13,6 +14,7 @@ import { City } from './world/city.js';
 import { Props } from './world/props.js';
 import { Landmarks } from './world/landmarks.js';
 import { BrazilLandmarks } from './world/brasil.js';
+import { IMGBuildings } from './world/imgbuildings.js';
 import { TrafficSystem } from './sys/traffic.js';
 import { PedestrianSystem } from './ent/pedestrian.js';
 import { CarSystem } from './ent/car.js';
@@ -28,6 +30,20 @@ import { HUD } from './ui/hud.js';
 import { Minimap } from './ui/minimap.js';
 import { Phone } from './ui/phone.js';
 import { Settings } from './settings.js';
+
+// ---- campanha: Bob em Busca da AGI Sagrada
+import { carregarCampanha, salvarCampanha, proximaFase } from './story/story.js';
+import { Dialogue } from './ui/dialogue.js';
+import { PlanScreen } from './ui/plan.js';
+import { PortalSystem } from './sys/portal.js';
+import { StageRunner } from './sys/stage.js';
+import { ViewModel } from './ent/viewmodel.js';
+import { CityBoss } from './ent/cityboss.js';
+import { Canetadas } from './sys/canetadas.js';
+import { HomingMissiles } from './sys/homing.js';
+import { CHEFES } from './ent/foe.js';
+import { Audio, VOLUMES, DEFAULT_VOLUME } from './sys/audio.js';
+import { Music } from './sys/music.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -52,6 +68,22 @@ export class Game {
     this.col.terrainFn = terrainHeight;
 
     this.input = new Input(canvas);
+
+    /*
+     * ---- campanha da AGI Sagrada ----
+     * `emFase` guarda a fase em andamento (ou null no mundo aberto). É a
+     * chave que decide quase tudo: dentro de uma fase o jogador não pode
+     * entrar em carro, a missão de entrega para e a cidade não conta.
+     */
+    this.campanha = carregarCampanha();
+    this.emFase = null;
+    this.voltaMundo = null;      // para onde devolver o jogador ao sair
+    this.dialogue = new Dialogue();
+    this.plan = new PlanScreen(this.campanha);
+    this.audio = new Audio();
+    this.music = new Music(this.audio);
+    this.dialogue.onLetra = () => this.audio.blip();
+
     this._tmpV = new THREE.Vector3();
     this._focus = new THREE.Vector3();
     this._aimOrigin = new THREE.Vector3();
@@ -93,6 +125,11 @@ export class Game {
       this.landmarks.build(this.city);                       // [43][53][54]
     });
 
+    await step('erguendo o Estúdio e o Labs IMG...', () => {
+      this.imgBuildings = new IMGBuildings(this.gfx.scene, this.col);
+      this.imgBuildings.build(this.city);
+    });
+
     await step('trazendo Floripa, Curitiba e Salvador...', () => {
       this.brasil = new BrazilLandmarks(this.gfx.scene, this.col);
       this.brasil.build();                                   // [57][58][59]
@@ -128,6 +165,7 @@ export class Game {
       this.bullets.setTargets(this.peds, this.cars);
       this.bullets.onHitPed = (ped) => this._killPed(ped, true);
       this.bullets.onHitCar = (car) => this._killCar(car, true);
+      this.bullets.onHitFoe = (foe, ponto) => this._acertarFoe(foe, ponto);
 
       // [63] mísseis: mesmo alvo, mesma consequência, arma diferente
       this.missiles = new MissileSystem(this.gfx.scene, this.col, this.fx);
@@ -138,6 +176,13 @@ export class Game {
       this.player = new Player(this.gfx.scene, this.col);
       this.camera = new GameCamera(this.gfx.camera, this.col);
 
+      // [36] barulho do pulo e peso da aterrissagem
+      this.player.onPulo = () => this.audio.pulo();
+      this.player.onPousar = (forca) => {
+        this.audio.aterrissar(forca);
+        if (forca > 0.6) this.camera.addShake(forca * 0.3);
+      };
+
       this.mission = new MissionSystem(this.gfx.scene, this.peds);   // [5][6][7]
       this.hud = new HUD();
       this.minimap = new Minimap($('minimap'), this.city, $('compass-n'));  // [10]
@@ -146,12 +191,60 @@ export class Game {
       this._wireUI();
       this._applySettings();
     });
+
+    // ---- campanha: arenas e portais.
+    // Vem por último porque o portal precisa do mundo de colisão pronto
+    // para descobrir a altura do chão em cada marco.
+    await step('marcando os portais da AGI Sagrada...', () => {
+      this.portais = new PortalSystem(this.gfx.scene, this.col, this.campanha);
+      // a arma na tela (só aparece dentro das fases)
+      this.viewmodel = new ViewModel(this.gfx.camera, this.gfx.scene);
+      // decretos voadores do Trunfo colossal
+      this.canetadas = new Canetadas(this.gfx.scene, this.fx);
+      // arma pesada de recarga longa: trava no alvo e persegue
+      this.teleguiado = new HomingMissiles(this.gfx.scene, this.fx, 11);
+      this.teleguiado.onAcerto = (foe, ponto) => this._acertarFoe(foe, ponto, 120, true);
+
+      /*
+       * O runner vem ANTES de qualquer callback que fale com ele.
+       * As dependências entram pelo construtor em vez de serem
+       * penduradas depois — assim é impossível repetir a inversão de
+       * ordem que quebrava o boot aqui.
+       */
+      this.stage = new StageRunner({
+        scene: this.gfx.scene,
+        dialogue: this.dialogue,
+        fx: this.fx,
+        onFim: (fase) => this._vencerFase(fase),
+        onChefeAberto: (fase) => this._soltarChefeNaCidade(fase),
+      });
+
+      // míssil é a única arma que arranha o colosso
+      this.missiles.setFoes(null);
+      this.missiles.onHitFoe = (foe, ponto) => this._acertarFoe(foe, ponto, 55, true);
+
+      // bicada do Loro: dano de verdade, um pouco maior que o do tiro
+      this.player.loro.onAcerto = (foe) => {
+        this._acertarFoe(foe, null, 22);
+        this.audio.companheiro();
+        this.hud.toast('LORO!', 'good');
+      };
+      // ferrão do Saci-Bot: teleporta e crava, então bate mais forte
+      this.player.saci.onAcerto = (foe) => {
+        this._acertarFoe(foe, null, 30);
+        this.audio.companheiro();
+        this.hud.toast('SACI-BOT!', 'good');
+      };
+      this._atualizarCompanheiros();
+    });
   }
 
   /** Aplica as preferências salvas na interface e no mundo. */
   _applySettings() {
     this.presetIndex = this.settings.get('presetIndex');
     this.applyPreset(this.presetIndex);
+    this.applyRenderDistance(this.settings.get('renderDistanceIndex'));
+    this.applyVolume(this.settings.get('volumeIndex'));
     this.applyPopulation(this.settings.get('populationIndex'));  // [61]
     this.setDayNight(this.settings.get('cycleMode'));         // [13]
     $('timer-enabled').checked = this.settings.get('timerEnabled');   // [8]
@@ -172,6 +265,9 @@ export class Game {
     // ---------------------------------------------------- teclas de ação
     this.input.onKey = (code) => {
       if (code === 'Escape') {
+        // ESC é do MENU, sempre. A cutscene tem teclas próprias
+        // (Espaço avança, Enter pula) para nunca disputar com a pausa.
+        if (this.plan.aberto) { this.plan.fechar(); return; }
         if (this.phone.open) { this.phone.close(); return; }
         if (this.state === 'playing') this.pause();
         else if (this.state === 'paused') this.resume();
@@ -181,9 +277,45 @@ export class Game {
       }
       if (this.state !== 'playing') return;
 
+      /*
+       * ---- teclas da cutscene ----
+       * Espaço avança (e revela a linha inteira no primeiro toque),
+       * F pula a cena toda.
+       *
+       * O `return` no fim é o que deixa reaproveitar o F: durante a
+       * fala ele pula o diálogo e a função sai ali mesmo, então nunca
+       * chega no F de entrar em veículo ou em fase. Uma tecla, dois
+       * papéis, sem ambiguidade — porque os dois contextos jamais
+       * coexistem.
+       *
+       * ESC fica FORA disso de propósito: ele já é a pausa do jogo, e
+       * disputar a mesma tecla faria o jogador pausar quando quisesse
+       * pular — ou pular quando quisesse pausar.
+       */
+      if (this.dialogue.ativo) {
+        if (code === 'Space') this.dialogue.avancar();
+        else if (code === 'KeyF') this.dialogue.pular();
+        return;
+      }
+
+      if (code === 'KeyJ') { this.plan.alternar(); return; }  // o Plano da AGI
+      // com o Plano aberto, F fecha também: é a tecla que a mão já está
+      // usando para tudo (entrar em fase, pular fala), então fechar com
+      // ela é o reflexo — e nada mais responde enquanto o quadro está na tela
+      if (this.plan.aberto) {
+        if (code === 'KeyF') this.plan.fechar();
+        return;
+      }
+
       if (code === 'KeyC') { this.phone.toggle(); return; }   // [56]
       if (this.phone.open) return;
 
+      // F entra na fase quando há portal por perto; senão é o veículo [9]
+      if (code === 'KeyF' && this.mode === 'foot') {
+        if (this.emFase) { this._sairDaFase(false); return; }
+        const p = this.portais && this.portais.disponivel;
+        if (p) { this._entrarNaFase(p.fase); return; }
+      }
       if (code === 'KeyF') this._toggleVehicle();             // [9][43]
       if (code === 'KeyV') this._toggleView();                // [25]
       if (code === 'KeyE') this._shoot();                     // [27]
@@ -191,6 +323,9 @@ export class Game {
       if (code === 'KeyG') this.cyclePreset();                // qualidade gráfica
       if (code === 'KeyN') this.cycleDayNight();              // [13] iluminação
       if (code === 'KeyP') this.cyclePopulation();            // [61] movimento na cidade
+      if (code === 'KeyX') this._dispararTeleguiado();       // míssil teleguiado
+      if (code === 'KeyO') this.cycleVolume();               // volume dos efeitos
+      if (code === 'KeyL') this.cycleRenderDistance();   // alcance de renderização
       if (code === 'KeyM') this.toggleGod();                  // [60] modo Deus
     };
 
@@ -200,6 +335,10 @@ export class Game {
     }
 
     // ---------------------------------------------------- [61] movimento na cidade
+    for (const btn of document.querySelectorAll('#vol-group .choice')) {
+      btn.addEventListener('click', () => { this.audio.acordar(); this.applyVolume(Number(btn.dataset.vol)); });
+    }
+
     for (const btn of document.querySelectorAll('#pop-group .choice')) {
       btn.addEventListener('click', () => this.applyPopulation(Number(btn.dataset.pop)));
     }
@@ -231,6 +370,7 @@ export class Game {
       this.player.setCarrying(true);                          // [50]
       this.hud.setCarrying(true);
       this.hud.toast('PACOTE COLETADO', 'good');
+      this.audio.item(true);
       this.phone.push(ev.ped.number, 'Valeu! Entrega pro contato marcado no mapa. 📦');
       if (this.mission.receiver) {
         this.phone.push(this.mission.receiver.number, 'Oi! Soube que você tem algo pra mim. Tô te esperando!');
@@ -241,7 +381,8 @@ export class Game {
       this.player.setCarrying(false);
       this.hud.setCarrying(false);
       this.addTime(ev.timeBonus, '+30s');                     // [7] +30 segundos
-      this.hud.toast(`+${ev.points} PONTOS`, 'pts');          // [7] +10 pontos
+      this.hud.toast(`+${ev.points} PONTOS`, 'pts');
+      this.audio.item(true);          // [7] +10 pontos
       this.phone.push(ev.ped.number, 'Chegou! Muito obrigado 🙏');
       if (this.mission.carrier) {
         this.phone.push(this.mission.carrier.number, 'Ei! Tenho outro pacote aqui pra você.');
@@ -249,7 +390,7 @@ export class Game {
     };
 
     // ---------------------------------------------------- botões das telas
-    $('start-btn').addEventListener('click', () => this.start());
+    $('start-btn').addEventListener('click', () => { this.audio.acordar(); this.start(); });
     $('restart-btn').addEventListener('click', () => this.restart());   // [40]
     $('resume-btn').addEventListener('click', () => this.resume());
     $('quit-btn').addEventListener('click', () => this.toTitle());
@@ -266,11 +407,21 @@ export class Game {
     this.deliveries = 0;
     this.hearts = PLAYER.maxHearts;                           // [33]
     this.invuln = 0;
+    this.semDano = 0;
     this.elapsed = 0;
     this.mode = 'foot';
     this.god = false;
     this.cableCabin = null;
     this.hud.setGod(false);
+
+    // uma partida nova não pode começar dentro de uma arena: se o jogador
+    // morreu no meio de uma fase, o mundo tem que voltar a ser a cidade.
+    // O PROGRESSO da campanha não se perde aqui — ele mora no localStorage
+    // e só zera de propósito; morrer não apaga as peças conquistadas.
+    this.dialogue.cancelar();
+    this.plan.fechar();
+    if (this.emFase) this._sairDaFase(false);
+    this._atualizarCompanheiros();   // o Saci reflete o Plano nesta partida
 
     this._resetEntities();
 
@@ -282,6 +433,8 @@ export class Game {
     this.hud.setHearts(this.hearts);
     this.hud.setTimer(this.timeLeft, this.timerEnabled);
 
+    // o tema surf é o hino do canal: toca na cidade, entre desafios
+    this.music.tocar('saopaulo');
     this.state = 'playing';
     this.hasGame = true;
     this.input.enabled = true;
@@ -296,6 +449,7 @@ export class Game {
    * ESC). Só `start()` reinicia de verdade.
    */
   toTitle() {
+    this.music.tocar('abertura');
     this.state = 'title';
     this.input.enabled = false;
     this.input.releaseLock();
@@ -334,7 +488,18 @@ export class Game {
     this.input.requestLock();
   }
 
-  gameOver(reason, win = false) {                             // [35]
+  gameOver(reason, win = false) {
+    /*
+     * Cancela a fala pendente ANTES de tudo. Sem isto, morrer no meio da
+     * cutscene de vitória deixava a caixa de diálogo por cima da tela de
+     * fim de jogo, com um callback de roteiro esperando um Espaço que
+     * não ia chegar — travado, do ponto de vista de quem joga.
+     */
+    this.dialogue.cancelar();
+    this.canetadas.limpar();
+    this.music.tocar(win ? 'festa' : 'gameover');
+    this.audio.calarZumbido();
+    if (!win) this.audio.derrota();                             // [35]
     if (this.state === 'over') return;
     this.state = 'over';
     this.hasGame = false;            // acabou: não há mais para onde voltar
@@ -462,6 +627,7 @@ export class Game {
   }
 
   _exitCar() {
+    this.audio.calarMotor();
     const car = this.playerCar;
     car.setInteriorView(false);
     this.bullets.ignoreCar = null;
@@ -610,10 +776,65 @@ export class Game {
     this.sky.envUpdateInterval = p.envUpdate;
     this.props.setMaxLights(p.dynamicLights);
 
-    // a névoa fecha um pouco nos perfis baixos: menos geometria distante
-    QUALITY.fogFar = p.fogFar;
-
+    this._aplicarNevoa();
     this.hud.setPreset(p.label);
+  }
+
+  // ==================================================================
+  //  distância de renderização (tecla L)
+  // ==================================================================
+  /**
+   * A névoa sai do MAIS APERTADO entre o perfil gráfico e a distância de
+   * renderização.
+   *
+   * Os dois mexem no mesmo número por motivos diferentes — o perfil
+   * fecha a névoa para aliviar a placa, a distância fecha porque o
+   * jogador pediu. Deixar um sobrescrever o outro faria o último a ser
+   * aplicado ganhar, e trocar de perfil desfaria a escolha de alcance
+   * (foi o que já aconteceu entre perfil e população, e virou ajuste
+   * separado por isso).
+   */
+  _aplicarNevoa() {
+    const p = PRESETS[this.presetIndex] || PRESETS[DEFAULT_PRESET];
+    const d = RENDER_DISTANCES[this.distIndex] ?? RENDER_DISTANCES[DEFAULT_RENDER_DISTANCE];
+    QUALITY.fogFar = Math.min(p.fogFar, d.dist * 0.88);
+    QUALITY.fogNear = Math.min(d.fogNear, QUALITY.fogFar * 0.55);
+  }
+
+  applyRenderDistance(index) {
+    // um índice inválido (save antigo, preferência ausente) cai no padrão
+    // em vez de quebrar a inicialização — mesma regra do `settings.js`
+    const base = Number.isInteger(index) ? index : DEFAULT_RENDER_DISTANCE;
+    const i = (base % RENDER_DISTANCES.length + RENDER_DISTANCES.length) % RENDER_DISTANCES.length;
+    const d = RENDER_DISTANCES[i];
+    this.distIndex = i;
+
+    this.gfx.setFar(d.dist);
+    this.sky.setRenderDistance(d.dist);      // domo, estrelas e lua encolhem junto
+    this._aplicarNevoa();
+
+    this.settings.set('renderDistanceIndex', i);
+    if (this.hud) this.hud.toast('ALCANCE: ' + d.label, 'time');
+  }
+
+  applyVolume(index) {
+    const base = Number.isInteger(index) ? index : DEFAULT_VOLUME;
+    const i = (base % VOLUMES.length + VOLUMES.length) % VOLUMES.length;
+    this.volIndex = i;
+    this.audio.setGanho(VOLUMES[i].ganho);
+    this.settings.set('volumeIndex', i);
+    for (const b of document.querySelectorAll('#vol-group .choice')) {
+      b.classList.toggle('active', Number(b.dataset.vol) === i);
+    }
+    if (this.hud) this.hud.toast('SOM: ' + VOLUMES[i].label, 'time');
+  }
+
+  cycleVolume() {
+    this.applyVolume((this.volIndex ?? DEFAULT_VOLUME) + 1);
+  }
+
+  cycleRenderDistance() {
+    this.applyRenderDistance((this.distIndex ?? DEFAULT_RENDER_DISTANCE) + 1);
   }
 
   // ==================================================================
@@ -690,7 +911,57 @@ export class Game {
     if (this.bullets.fire(origin, direction)) {               // [37][38][41]
       this.hud.recoil();
       this.camera.addShake(0.16);
+      this.audio.tiro();
+      if (this.viewmodel) this.viewmodel.darCoice();
+      this._companheiroAtaca();
     }
+  }
+
+  /**
+   * O par Loro / Saci-Bot, decidido pelos PÉS.
+   *
+   *   atirar NO AR   -> o Loro mergulha ("Repetição Infinita": ele
+   *                     repete o golpe que acabou de ver)
+   *   atirar NO CHÃO -> o Saci-Bot some num redemoinho e reaparece
+   *                     atrás do inimigo
+   *
+   * Uma tecla, dois golpes. Amarrar no pulo é o que transforma os dois
+   * em coisa que se aprende a usar, em vez de automatismo que resolve a
+   * luta sozinho — e dá ao pulo uma função ofensiva, que ele não tinha.
+   */
+  _companheiroAtaca() {
+    if (!this.emFase || this.mode !== 'foot' || this.god) return;
+
+    const noAr = !this.player.grounded;
+    const ajudante = noAr ? this.player.loro : this.player.saci;
+    if (!ajudante) return;
+
+    /*
+     * Quando o ajudante não pode agir, DIGA. Antes isto era um `return`
+     * mudo, e do lado de cá da tela "recarregando" e "quebrado" são a
+     * mesma coisa: o jogador atira, nada acontece, e ele conclui que o
+     * golpe não existe.
+     */
+    if (!ajudante.ativo) {
+      if (!noAr) this._avisoUmaVez('saciTravado', 'SACI-BOT: derrote o Ilon para desbloquear');
+      return;
+    }
+    if (!ajudante.podeAtacar) {
+      this._avisoUmaVez(noAr ? 'loroRec' : 'saciRec',
+        noAr ? 'LORO RECARREGANDO' : 'SACI-BOT RECARREGANDO');
+      return;
+    }
+
+    // inimigo vivo mais próximo do jogador
+    const p = this.player.position;
+    let alvo = null, melhor = Infinity;
+    for (const f of this.stage.foes) {
+      if (!f.vivo) continue;
+      const d = f.root.position.distanceToSquared(p);
+      if (d < melhor) { melhor = d; alvo = f; }
+    }
+    // 26 m de alcance: mais longe que isso, o mergulho vira uma viagem
+    if (alvo && melhor < 26 * 26) ajudante.atacar(alvo);
   }
 
   /**
@@ -718,6 +989,7 @@ export class Game {
     if (this.missiles.fire(boca, rumo)) {
       this.hud.recoil();
       this.camera.addShake(0.22);
+      this.audio.missil();
     }
   }
 
@@ -726,6 +998,7 @@ export class Game {
     if (!ped || !ped.alive) return;
     const p = ped.human.root.position;
     this.fx.explode(new THREE.Vector3(p.x, p.y + 0.9, p.z), 1.0);
+    this.audio.explosao(1);
     this.camera.addShake(byBullet ? 0.3 : 0.5);
     this.peds.remove(ped, true);                              // [29] repõe outra
     this.addTime(GAME.killTimeBonus, '+5s');                  // [32]
@@ -739,6 +1012,7 @@ export class Game {
     if (car === this.playerCar) return;
     const p = car.root.position;
     this.fx.explode(new THREE.Vector3(p.x, p.y + 0.8, p.z), 1.9);
+    this.audio.explosao(2);
     this.camera.addShake(byBullet ? 0.4 : 0.7);
     this.cars.remove(car, true);                              // [29] repõe outro
     this.addTime(GAME.killTimeBonus, '+5s');                  // [32]
@@ -750,10 +1024,376 @@ export class Game {
     if (label) this.hud.toast(label, 'time');
   }
 
+  // ==================================================================
+  //  campanha — Bob em Busca da AGI Sagrada
+  // ==================================================================
+
+  /**
+   * Liga os companheiros que a campanha já conquistou.
+   *
+   * O Saci-Bot é a conquista da Guilda dos Roboticistas, montada com os
+   * blueprints do Optimus roubados na Gigafábrica. Ele existe a partir
+   * da peça INVESTIMENTO e some se a campanha for zerada — a conquista
+   * tem que ser visível no jogo, senão derrotar o Ilon não muda nada
+   * além de um ✔ numa tela.
+   */
+  _atualizarCompanheiros() {
+    const temSaci = !!this.campanha.conquistas.investimento;
+    if (temSaci) this.player.saci.ligar();
+    else this.player.saci.desligar();
+  }
+
+  /** Aviso que não repete em rajada: um por tipo a cada 2,5 s. */
+  _avisoUmaVez(chave, texto) {
+    this._avisos = this._avisos || {};
+    if (this.elapsed - (this._avisos[chave] || -9) < 2.5) return;
+    this._avisos[chave] = this.elapsed;
+    this.hud.toast(texto, 'bad');
+  }
+
+  /**
+   * A trava do míssil teleguiado.
+   *
+   * Procura o inimigo mais alinhado com a mira e desenha o quadro de
+   * trava EM CIMA DELE na tela, projetando a posição 3D. O quadro fica
+   * onde o alvo está, e não no centro, porque é ele que responde a
+   * pergunta que o jogador faz antes de apertar: "vai nesse mesmo?".
+   */
+  _atualizarTrava() {
+    const el = this._elTrava || (this._elTrava = $('lock-on'));
+    const gauge = this._elGauge || (this._elGauge = $('missile-gauge'));
+    const fill = this._elFill || (this._elFill = $('mg-fill'));
+
+    // o medidor só aparece em fase: fora dela não há o que travar
+    const emLuta = !!(this.emFase && this.stage.ativo);
+    gauge.classList.toggle('hidden', !emLuta);
+    if (emLuta) {
+      const c = this.teleguiado.carga;
+      fill.style.width = (c * 100).toFixed(0) + '%';
+      fill.classList.toggle('full', c >= 1);
+    }
+
+    if (!emLuta || this.plan.aberto || this.dialogue.ativo) {
+      this.alvoTravado = null;
+      el.classList.add('hidden');
+      return;
+    }
+
+    const { origin, direction } = this.camera.aimRay(this._aimOrigin, this._aimDir);
+    const alvo = this.teleguiado.procurarAlvo(origin, direction, this.stage.foes);
+    this.alvoTravado = alvo;
+
+    if (!alvo) { el.classList.add('hidden'); return; }
+
+    // projeta o ponto de mira do inimigo para coordenadas de tela
+    this._tmpV.set(
+      alvo.root.position.x,
+      alvo.root.position.y + (alvo.alturaAlvo || 1),
+      alvo.root.position.z,
+    ).project(this.gfx.camera);
+
+    // atrás da câmera: não desenha (a projeção espelha e o quadro salta)
+    if (this._tmpV.z > 1) { el.classList.add('hidden'); return; }
+
+    el.style.left = ((this._tmpV.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+    el.style.top = ((-this._tmpV.y * 0.5 + 0.5) * window.innerHeight) + 'px';
+    el.classList.remove('hidden');
+    el.classList.toggle('ready', this.teleguiado.pronto);
+    $('lock-label').textContent = this.teleguiado.pronto ? 'TRAVADO' : 'RECARREGANDO';
+  }
+
+  /** [X] Dispara o teleguiado no alvo travado. */
+  _dispararTeleguiado() {
+    if (!this.emFase || !this.stage.ativo) return;
+    if (!this.teleguiado.pronto) { this.hud.toast('MÍSSIL RECARREGANDO', 'bad'); return; }
+    if (!this.alvoTravado) { this.hud.toast('SEM ALVO — APONTE A MIRA', 'bad'); return; }
+
+    const { origin, direction } = this.camera.aimRay(this._aimOrigin, this._aimDir);
+    if (this.teleguiado.disparar(origin, direction, this.alvoTravado)) {
+      this.audio.missil();
+      this.hud.recoil();
+      this.camera.addShake(0.3);
+      if (this.viewmodel) this.viewmodel.darCoice();
+    }
+  }
+
+  /**
+   * O som de quem está chegando: zumbido dos drones e patinha dos robôs.
+   *
+   * Serve de AVISO. Numa cidade aberta o inimigo vem de trás de um
+   * prédio e o jogador não tem como olhar para os quatro lados ao mesmo
+   * tempo — ouvir o enxame engrossar, ou o tec-tec no asfalto, é o que
+   * dá a chance de virar antes de tomar.
+   *
+   * O zumbido é UM som para o bando todo, modulado pela proximidade do
+   * mais perto; a patinha sai por inimigo que anda, com trava no
+   * `Audio` para o conjunto não virar chiado.
+   */
+  _ambienteInimigos(dt) {
+    if (!this.emFase || !this.stage.ativo) { this.audio.calarZumbido(); return; }
+
+    const p = this._focus;
+    let voadoresPerto = 0, maisPerto = Infinity;
+    this._passoT = (this._passoT || 0) - dt;
+    const andando = [];
+
+    for (const f of this.stage.foes) {
+      if (!f.vivo) continue;
+      const d = Math.hypot(f.root.position.x - p.x, f.root.position.z - p.z);
+      if (d > 90) continue;
+      if (f.ficha && f.ficha.voa) { voadoresPerto++; maisPerto = Math.min(maisPerto, d); }
+      else if (d < 55) andando.push(d);
+    }
+
+    // 0 longe, 1 em cima: 40 m é onde o zumbido começa a incomodar
+    const perto = maisPerto === Infinity ? 0 : Math.max(0, 1 - maisPerto / 40);
+    this.audio.zumbido(perto, voadoresPerto);
+
+    if (andando.length && this._passoT <= 0) {
+      const d = Math.min(...andando);
+      // quanto mais perto e mais numerosos, mais miúdo o intervalo
+      this._passoT = Math.max(0.16, 0.5 - andando.length * 0.04) * (0.8 + Math.random() * 0.4);
+      this.audio.patinha(Math.max(0, 1 - d / 55));
+    }
+  }
+
+  /**
+   * Bússola da batalha: com o combate longe, diz a distância.
+   *
+   * Numa fase a céu aberto o jogador pode estar de costas para a briga,
+   * atrás de um prédio ou num morro. Sem uma referência ele fica
+   * procurando — foi o que aconteceu na Gigafábrica antes de o portal
+   * ser corrigido. O aviso só aparece quando REALMENTE está longe; de
+   * perto ele seria ruído sobre a luta.
+   */
+  _bussolaDaBatalha() {
+    if (!this.emFase || this.colosso) return;      // o colosso tem aviso próprio
+    const L = this.emFase.local;
+    if (!L) return;
+    const vivos = this.stage.foes.filter((f) => f.vivo);
+    if (!vivos.length) return;
+
+    const d = Math.hypot(this._focus.x - L.x, this._focus.z - L.z);
+    if (d > 70) this.hud.setPrompt(`A BATALHA ESTÁ A ${Math.round(d)} m — ${this.emFase.portal.label}`);
+  }
+
+  /** Quanto falta o colosso andar, no painel do helicóptero. */
+  _avisoColosso() {
+    const c = this.colosso;
+    if (!c || !c.vivo) return;
+    if (c.noAlto) {
+      this.hud.setPrompt('ELE SE AGARROU NO CRISTO — ACABA COM ISSO');
+    } else if (c.destino) {
+      this.hud.setPrompt(`TRUNFO A ${Math.round(c.faltam)} m DO LABS IMG · MÍSSEIS: E ou clique`);
+    }
+  }
+
+  /**
+   * Acerto em inimigo da fase.
+   *
+   * @param {boolean} deMissil  o colosso só se importa com míssil
+   */
+  _acertarFoe(foe, ponto, dano = 12, deMissil = false) {
+    if (!this.stage || !this.stage.ativo || !foe || !foe.vivo) return;
+
+    /*
+     * Casca de gigante não se fura com pistola. Avisar é parte do
+     * design: sem o aviso o jogador acha que está com bug, atirando num
+     * alvo enorme e sem ver número nenhum descer.
+     */
+    if (foe.ficha && foe.ficha.colossal && !deMissil) {
+      if (!this._avisoBalaT || this.elapsed - this._avisoBalaT > 2.5) {
+        this._avisoBalaT = this.elapsed;
+        this.hud.toast('BALA NÃO ARRANHA ELE — USE OS MÍSSEIS', 'bad');
+      }
+      return;
+    }
+
+    const morreu = this.stage.acertar(foe, ponto, dano, deMissil);
+    this.hud.hitMarker();
+    this.audio.acerto();
+    if (morreu) {
+      this.camera.addShake(foe.chefe ? 0.5 : 0.25);
+      this.audio.explosao(foe.chefe ? 3 : 1);
+      this.audio.abateu();
+      this.mission.score += foe.ficha.pontos || 5;
+    }
+  }
+
+  /**
+   * Entra numa fase: teleporta o jogador para a arena e começa o roteiro.
+   *
+   * O jogador some da cidade e reaparece na arena, que fica longe demais
+   * para ser vista de lá. Guardamos de onde ele saiu para devolvê-lo no
+   * mesmo lugar — sair de uma fase e cair no meio do mapa seria perder
+   * a viagem que ele acabou de fazer até o portal.
+   */
+  /**
+   * Entra numa fase. TODAS acontecem na cidade: os inimigos saem do
+   * marco que o chefão ocupou — a ponte, o museu, o largo do
+   * pelourinho — e a briga corre a céu aberto, com trânsito, pedestres,
+   * carro e helicóptero ao alcance.
+   *
+   * O jogador não é teleportado: ele já está no portal, que fica no
+   * próprio marco. A única exceção é o colosso, que exige helicóptero.
+   */
+  _entrarNaFase(fase) {
+    if (this.emFase) return;
+
+    const p = this.player.position;
+    this.voltaMundo = { x: p.x, y: p.y, z: p.z };
+    this.emFase = fase;
+    this.campanha.faseAtual = fase.key;
+
+    const ficha = CHEFES[fase.bossRush ? fase.bossRush[0] : fase.boss];
+    if (ficha && ficha.porte === 'colossal') this._embarcarNoHeli();
+
+    this.portais.visivel = false;
+    this.mission.marker.visible = false;
+    this.stage.iniciar(fase);
+    this.audio.fase();
+    /*
+     * A marcha imperial entra JUNTO com a fase, não quando o chefão
+     * aparece. O aviso vale mais cedo: o jogador ouve a música do mal e
+     * já sabe que a cidade virou campo de batalha, antes do primeiro
+     * capanga sair do marco.
+     */
+    this.music.tocar('boss');
+
+    /*
+     * Peça entregue ao CHEGAR, não ao vencer. É o caso do GALPÃO: na
+     * história ele não é fase, é o mutirão que a comunidade já fez.
+     */
+    if (fase.rewardOnEnter) {
+      this.plan.conquistar(fase.rewardOnEnter);
+      salvarCampanha(this.campanha);
+    }
+  }
+
+  /** Coloca o jogador no helicóptero (fase de colosso). */
+  _embarcarNoHeli() {
+    if (this.mode === 'heli') return;
+    const hp = this.landmarks.heliport;
+    if (this.mode === 'car') this._exitCar();
+    if (this.mode === 'cable') this._leaveCable();
+    this.heli.placeAt(hp.x, hp.y + HELI.landHeight, hp.z, 0);
+    this.player.teleport(hp.x, hp.z, hp.y);
+    this._enterHeli();
+  }
+
+  /**
+   * Põe o chefão na cidade, saindo do marco daquela fase.
+   *
+   * Quem MARCHA (só o Trunfo colossal) nasce longe e caminha para o
+   * Labs IMG: a distância vira o relógio da fase, e se ele chegar,
+   * acabou. Os outros nascem no próprio marco — a boca da ponte, o vão
+   * do museu, o largo do pelourinho — e partem para cima do jogador.
+   */
+  _soltarChefeNaCidade(fase) {
+    const chave = fase.bossRush ? fase.bossRush[this.stage.chefeIdx] : fase.boss;
+    const ficha = CHEFES[chave];
+    if (!ficha) { this.stage.estado = 'vitoria'; this.stage.pausa = 0.8; return; }
+
+    const marco = fase.local || { x: 0, z: 0 };
+    /*
+     * Quem marcha nasce no PÉ DO CORCOVADO, não do outro lado do mapa.
+     * Dá o arco inteiro num lugar só: ele desce do morro, atravessa a
+     * cidade até o laboratório e, encurralado, corre de volta para se
+     * agarrar no Cristo. Nascer longe do Corcovado fazia a fuga final
+     * virar uma travessia de mapa inteiro.
+     */
+    const inicio = ficha.marcha ? { x: -560, z: -330 } : marco;
+    const destino = { x: 0, z: 0 };
+
+    const chefe = new CityBoss(this.gfx.scene, this.col, ficha, inicio, destino);
+    this.colosso = chefe;
+
+    chefe.onPisada = (pos, forca) => {
+      this.camera.addShake(forca);
+      this.audio.passo(forca * 2);
+      this.fx.impact(new THREE.Vector3(pos.x, pos.y + 0.4, pos.z), new THREE.Vector3(0, 1, 0));
+    };
+    chefe.onMorreu = () => this.canetadas.limpar();
+    chefe.onCanetada = (origem, alvo) => {
+      if (this.canetadas.disparar(origem, alvo)) this.audio.canetada();
+    };
+    chefe.onTrepar = () => {
+      this.hud.toast('ELE ESTÁ SUBINDO O CORCOVADO!', 'bad');
+    };
+    chefe.onChegou = () => {
+      this.hud.toast('O TRUNFO PISOU NO LABS IMG', 'bad');
+      this.gameOver('O Trunfo alcançou o Labs IMG. A AGI não nasceu hoje.');
+    };
+
+    this.stage.adotarChefe(chefe);
+    // colosso só cai de míssil; os outros aceitam bala também
+    this.missiles.setFoes(this.stage.foes);
+    this.bullets.setFoes(this.stage.foes);
+  }
+
+  /** Sai da fase (por vitória ou desistência) e volta para a cidade. */
+  _sairDaFase(venceu) {
+    if (!this.emFase) return;
+
+    this.stage.abandonar();
+    if (this.colosso) { this.colosso.remover(); this.colosso = null; }
+    this.canetadas.limpar();
+    this.teleguiado.limpar();
+    this.missiles.setFoes(null);
+    this.bullets.setFoes(null);
+
+    this.emFase = null;
+    this.player.inimigos = null;
+    this.campanha.faseAtual = null;
+    this.portais.visivel = true;
+    this.hud.setPrompt(null);
+    this.audio.calarZumbido();
+    if (this.state === 'playing') this.music.tocar('saopaulo');
+    if (!venceu) this.hud.toast('FASE ABANDONADA', 'bad');
+  }
+
+  /** Fim de fase com vitória: guarda a peça do Plano e volta para o mapa. */
+  _vencerFase(fase) {
+    this.campanha.fasesVencidas[fase.key] = true;
+    this.audio.conquista();
+    this.plan.conquistar(fase.reward);
+    salvarCampanha(this.campanha);
+    this._atualizarCompanheiros();   // o Saci-Bot entra ao vencer o Ilon
+
+    this._sairDaFase(true);
+    this.hud.toast('FASE CONCLUÍDA', 'good');
+    this.audio.vitoria();
+    this.music.fanfarra();
+    this.music.tocar('vitoria');
+    this.mission.score += 100;
+
+    // abre o Plano na hora: é o momento em que a peça nova entra, e ver
+    // o quadro encher é a recompensa que amarra a campanha inteira
+    this.plan.abrir();
+  }
+
   /** [34] Jogador atropelado perde um coração. */
+  /**
+   * Um coração de volta a cada `regenTime`, depois de `regenDelay` sem
+   * apanhar. É o que permite errar sem recomeçar a fase inteira — mas
+   * como o relógio zera a cada dano, no meio da briga ele nunca completa.
+   */
+  _regenerar(dt) {
+    if (this.hearts <= 0 || this.hearts >= PLAYER.maxHearts) { this.semDano = 0; return; }
+    this.semDano = (this.semDano || 0) + dt;
+    if (this.semDano < PLAYER.regenDelay + PLAYER.regenTime) return;
+    this.semDano = PLAYER.regenDelay;      // recomeça a contar já do limiar
+    this.hearts++;
+    this.hud.setHearts(this.hearts);
+    this.hud.toast('+1 ❤', 'good');
+    this.audio.item(true);
+  }
+
   _damagePlayer(reason) {
+    this.audio.dano();
     if (this.invuln > 0) return;
     this.invuln = PLAYER.invulnTime;
+    this.semDano = 0;                    // zera o relógio da regeneração
     this.hearts--;                                            // [34]
     this.hud.setHearts(Math.max(0, this.hearts));
     this.hud.damageFlash();
@@ -779,7 +1419,31 @@ export class Game {
       // pausado ou fim de jogo: mundo congelado, cena continua desenhada
       this.sky.setPaused(true);
     }
+    this._somContinuo();
     this.input.endFrame();
+  }
+
+  /**
+   * Motor e zumbido dos drones: os sons que NÃO acabam sozinhos.
+   *
+   * Fica aqui, no laço de cima, e não dentro de _updatePlaying — foi
+   * exatamente esse o bug do motor: ao pausar, o laço de jogo parava
+   * de rodar e o som congelava tocando para sempre, porque ninguém
+   * mais mandava ele abaixar. Todo som sustentado precisa de alguém
+   * que o silencie quando o jogo sai do ar, e esse alguém tem que
+   * rodar SEMPRE, não só enquanto se joga.
+   */
+  _somContinuo() {
+    if (!this.audio) return;
+    const jogando = this.state === 'playing' && !this.phone.open
+      && !this.plan.aberto && !this.dialogue.ativo;
+
+    const frac = jogando && this.playerCar
+      ? Math.min(1, Math.abs(this.playerCar.speed) / CAR.maxSpeed) : 0;
+    const noCarro = jogando && this.mode === 'car';
+
+    this.audio.motor(frac, noCarro);
+    if (!jogando) this.audio.calarZumbido();
   }
 
   /** [39] Tela de abertura com a cidade viva girando ao fundo. */
@@ -812,10 +1476,20 @@ export class Game {
   _updatePlaying(dt) {
     this.elapsed += dt;
     this.invuln = Math.max(0, this.invuln - dt);
+    this._regenerar(dt);
     this.sky.setPaused(false);
+    this.dialogue.update(dt);
+
+    /*
+     * Durante cutscene ou com o Plano aberto o mundo continua rodando
+     * (a cidade vive, o céu anda), mas o jogador não comanda nada. É o
+     * mesmo bloqueio que o celular já usava — só que agora com três
+     * motivos possíveis.
+     */
+    const emCena = this.dialogue.ativo || this.plan.aberto;
 
     // ------------------------------------------------ olhar e zoom
-    if (!this.phone.open) {
+    if (!this.phone.open && !emCena) {
       const m = this.input.consumeMouse();
       this.camera.look(m.dx, m.dy);                           // [11]
       this.camera.zoom(this.input.consumeWheel());            // [12]
@@ -828,7 +1502,7 @@ export class Game {
       this.input.consumeClick();
     }
 
-    const blocked = this.phone.open;
+    const blocked = this.phone.open || emCena;
 
     // ------------------------------------------------ jogador / veículos
     if (this.mode === 'foot') {
@@ -882,10 +1556,20 @@ export class Game {
     this.missiles.update(dt);                                 // [63]
     this.fx.update(dt);
 
+    // ------------------------------------------------ campanha
+    this._updateCampanha(dt);
+    if (this.viewmodel) this.viewmodel.update(dt, this.player.speed || 0);
+    this.music.update();
+    this.teleguiado.update(dt);
+    this._atualizarTrava();
+    this._ambienteInimigos(dt);
+
     // ------------------------------------------------ interações
     this._checkVehicleImpacts(dt);
     this._checkPlayerHit();
-    this._updateMission(dt);
+    // dentro de uma fase a entrega da cidade não faz sentido: o jogador
+    // está a 1,5 km dali, e o marcador ficaria apontando para o nada
+    if (!this.emFase) this._updateMission(dt);
     this._updateTimer(dt);
 
     // ------------------------------------------------ câmera
@@ -893,6 +1577,60 @@ export class Game {
 
     // ------------------------------------------------ HUD
     this._updateHUD(dt);
+  }
+
+  /**
+   * Campanha: portais no mundo aberto e o andamento da fase na cidade.
+   *
+   * Os dois nunca rodam ao mesmo tempo — ou o jogador está procurando
+   * um portal, ou está no meio de uma fase.
+   */
+  _updateCampanha(dt) {
+    if (!this.portais) return;
+
+    if (!this.emFase) {
+      // só marca portal com o jogador a pé ou de carro; voando alto o
+      // prompt piscaria de longe sem que ele possa entrar
+      this.portais.update(dt, this._focus);
+      return;
+    }
+
+    // os companheiros escolhem alvo sozinhos: precisam da lista da fase
+    this.player.inimigos = this.stage.foes;
+
+    /*
+     * Contra o colosso o alvo é o HELICÓPTERO, não o corpo do jogador —
+     * ele está lá dentro, e o boneco fica escondido. Mirar no corpo
+     * faria o gigante perseguir uma posição congelada no heliporto.
+     */
+    const alvo = this.mode === 'heli' ? this.heli.root.position : this.player.position;
+    const dano = this.stage.update(dt, alvo, this.col);
+
+    /*
+     * As canetadas continuam VOANDO durante a cutscene, mas não
+     * machucam — mesma regra dos capangas.
+     *
+     * Este era um buraco de verdade: o dano dos inimigos eu já tinha
+     * zerado dentro do `StageRunner`, mas os decretos rodam por fora
+     * dele. Resultado: você derrubava o Trunfo, entrava o diálogo de
+     * vitória, e os papéis que já estavam no ar te matavam com a tela
+     * presa no texto, sem poder desviar.
+     */
+    const danoPapel = this.canetadas.update(dt, alvo);
+    if (danoPapel > 0 && this.invuln <= 0 && !this.god && !this.dialogue.ativo) {
+      this._damagePlayer('Atingido por uma canetada do Trunfo');
+    }
+    this.missiles.setFoes(this.stage.foes);
+    this.bullets.setFoes(this.stage.foes);
+    this._avisoColosso();
+    this._bussolaDaBatalha();
+
+    if (dano > 0 && this.invuln <= 0 && !this.god) {
+      this._damagePlayer('Derrotado pelos capangas das Big Techs');
+    }
+
+    // fase encerrada por morte do jogador: o `gameOver` já cuidou
+    if (this.state !== 'playing') this._sairDaFase(false);
   }
 
   // ------------------------------------------------------------------ carro do jogador
@@ -1116,6 +1854,8 @@ export class Game {
       pickup: this.mission.state === 'collect' && tPos ? tPos : null,
       deliver: this.mission.state === 'deliver' && tPos ? tPos : null,
       heli: this.mode === 'foot' ? this.heli.root.position : null,
+      // [campanha] os portais aparecem no radar, com a próxima fase em destaque
+      portais: this.emFase || !this.portais ? null : this.portais.marcadores(proximaFase(this.campanha)),
     }, { peds: this.peds, cars: this.cars });
 
     // ---- dicas contextuais [9][43]

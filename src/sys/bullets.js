@@ -39,7 +39,9 @@ export class BulletSystem {
 
     this.onHitPed = null;
     this.onHitCar = null;
-    this.targets = { peds: null, cars: null };
+    /** Inimigo da campanha da AGI Sagrada (arena de fase). */
+    this.onHitFoe = null;
+    this.targets = { peds: null, cars: null, foes: null };
     /** Veículo pilotado pelo jogador: os tiros saem de dentro dele e não devem acertá-lo. */
     this.ignoreCar = null;
 
@@ -53,6 +55,13 @@ export class BulletSystem {
     this.targets.peds = peds;
     this.targets.cars = cars;
   }
+
+  /**
+   * Lista de inimigos da fase em andamento (ou null fora de fase).
+   * Dentro da arena só existem eles — pessoas e carros da cidade ficam
+   * longe demais para o segmento da bala alcançar.
+   */
+  setFoes(foes) { this.targets.foes = foes; }
 
   get canFire() { return this.cooldown <= 0; }
 
@@ -90,6 +99,11 @@ export class BulletSystem {
 
       const hit = this._trace(b.p, dir, step);
       if (hit) {
+        if (hit.kind === 'foe') {
+          if (this.onHitFoe) this.onHitFoe(hit.foe, hit.point);
+          this._kill(i, b);
+          continue;
+        }
         if (hit.kind === 'ped') {
           if (this.onHitPed) this.onHitPed(hit.ped, hit.point);
           this._kill(i, b);
@@ -127,9 +141,21 @@ export class BulletSystem {
     }
   }
 
-  /** Testa o segmento contra pessoas, carros, cenário e chão. */
+  /** Testa o segmento contra inimigos, pessoas, carros, cenário e chão. */
   _trace(from, dir, dist) {
     let best = null;
+
+    // --- inimigos da campanha (arena de fase)
+    if (this.targets.foes) {
+      for (const foe of this.targets.foes) {
+        if (!foe.vivo) continue;
+        const c = foe.root.position;
+        const t = this._segSphere(
+          from, dir, dist, c.x, c.y + foe.alturaAlvo, c.z, foe.raioAcerto,
+        );
+        if (t !== null && (!best || t < best.t)) best = { t, kind: 'foe', foe };
+      }
+    }
 
     // --- pessoas [24][27]
     if (this.targets.peds) {

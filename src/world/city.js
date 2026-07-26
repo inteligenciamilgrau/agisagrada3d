@@ -77,6 +77,28 @@ export class City {
     const k = this.parkBlocks.indexOf(helipadBlock);
     if (k >= 0) this.parkBlocks.splice(k, 1);
     this.heliportBlock = helipadBlock;
+
+    /*
+     * Reserva os quarteirões do Labs IMG e do Estúdio IMG, pelo mesmo
+     * caminho do heliporto: marcados ANTES da geração dos prédios, para
+     * nascerem vazios e receberem o galpão da comunidade.
+     *
+     * Isto conserta um erro de coordenada: os portais das duas fases
+     * estavam em (0,0) e (0,64), que parecem esquinas mas são o CENTRO
+     * de um quarteirão — os cruzamentos ficam em múltiplos de 64 a
+     * partir de -224. O portal nascia dentro de um prédio genérico, sem
+     * porta por onde entrar.
+     */
+    const reservar = (i, j, tipo) => {
+      const b = this.blockAt(i, j);
+      if (!b) return null;
+      b.type = tipo;
+      const k = this.parkBlocks.indexOf(b);
+      if (k >= 0) this.parkBlocks.splice(k, 1);
+      return b;
+    };
+    this.labsBlock = reservar(3, 3, 'labs');       // centro do mapa: (0, 0)
+    this.studioBlock = reservar(3, 4, 'studio');   // ao lado:        (0, 64)
   }
 
   blockAt(i, j) {
