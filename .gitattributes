@@ -1,0 +1,26 @@
+# ============================================================
+#  Fim de linha normalizado
+# ============================================================
+# Sem isto, o Git no Windows grava CRLF e quem abrir o projeto no Linux
+# ou no macOS vê o arquivo inteiro como alterado — um diff de 900 linhas
+# que na verdade não mudou nada. Dentro do repositório tudo fica em LF;
+# no disco de cada um, o Git converte para o que o sistema usa.
+* text=auto eol=lf
+
+# Scripts que só rodam no Windows precisam de CRLF de verdade:
+# um .bat com LF pode falhar em algumas versões do cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binários: nunca converter, senão corrompe.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.mp3 binary
+*.wav binary
+*.mp4 binary

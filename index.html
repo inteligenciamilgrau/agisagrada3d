@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Cidade 3D IMG</title>
+<meta name="description" content="Jogo 3D de entregas numa cidade brasileira simulada: Cristo Redentor, bondinho do Pão de Açúcar, carros, pedestres e ciclo dia/noite. Feito em Three.js com pipeline PBR.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070c">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Cidade 3D IMG">
+<meta property="og:description" content="Jogo 3D de entregas numa cidade brasileira simulada, em Three.js com pipeline PBR.">
+<meta property="og:locale" content="pt_BR">
+<meta name="twitter:card" content="summary">
+<link rel="stylesheet" href="./css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<!-- ==================== HUD ==================== -->
+<div id="hud" class="hidden">
+
+  <!-- [42] mira posicionada a 2/5 do topo da tela / [37] mira no ponto que o tiro acerta -->
+  <div id="crosshair">
+    <svg viewBox="0 0 64 64" width="64" height="64">
+      <circle cx="32" cy="32" r="13" class="ch-ring"/>
+      <circle cx="32" cy="32" r="1.6" class="ch-dot"/>
+      <line x1="32" y1="6"  x2="32" y2="19" class="ch-line"/>
+      <line x1="32" y1="45" x2="32" y2="58" class="ch-line"/>
+      <line x1="6"  y1="32" x2="19" y2="32" class="ch-line"/>
+      <line x1="45" y1="32" x2="58" y2="32" class="ch-line"/>
+    </svg>
+    <div id="hitmarker"></div>
+  </div>
+
+  <!-- topo esquerdo: vidas, pontos, tempo -->
+  <div id="topleft">
+    <!-- [33][34][35] corações -->
+    <div id="hearts"></div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="stat-label">PONTOS</span>
+        <span class="stat-value" id="score">0</span>
+      </div>
+      <!-- [8] tempo de 10 minutos (pode ser desativado) -->
+      <div class="stat" id="timer-box">
+        <span class="stat-label">TEMPO</span>
+        <span class="stat-value" id="timer">10:00</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">ENTREGAS</span>
+        <span class="stat-value" id="deliveries">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- [10] minimapa que gira junto com o jogador -->
+  <div id="minimap-wrap">
+    <canvas id="minimap" width="360" height="360"></canvas>
+    <div id="minimap-ring"></div>
+    <div id="compass-n">N</div>
+  </div>
+
+  <!-- objetivo atual -->
+  <div id="objective">
+    <div id="objective-icon">📦</div>
+    <div>
+      <div id="objective-title">COLETAR</div>
+      <div id="objective-text">Encontre o portador do pacote</div>
+      <div id="objective-dist">-- m</div>
+    </div>
+  </div>
+
+  <!-- [28] velocímetro até 120 km/h (só aparece dentro do carro) -->
+  <div id="speedo" class="hidden">
+    <canvas id="speedo-canvas" width="300" height="300"></canvas>
+    <div id="speedo-value">0</div>
+    <div id="speedo-unit">km/h</div>
+    <div id="gear">P</div>
+  </div>
+
+  <!-- altímetro do helicóptero [43] -->
+  <div id="heli-panel" class="hidden">
+    <div class="heli-row"><span>ALT</span><b id="heli-alt">0</b><span>m</span></div>
+    <div class="heli-row"><span>VEL</span><b id="heli-spd">0</b><span>km/h</span></div>
+    <!-- [63] no ar, o E/clique dispara míssil no lugar da pistola -->
+    <div class="heli-row heli-arm"><span>ARM</span><b>MÍSSEIS</b><span>E / clique</span></div>
+    <div id="heli-warn">DESÇA PARA SAIR</div>
+  </div>
+
+  <!-- dica contextual (entrar em carro / helicóptero / pegar objeto) -->
+  <div id="prompt" class="hidden"></div>
+
+  <!-- avisos flutuantes (+10 pontos, +30s...) -->
+  <div id="toasts"></div>
+
+  <!-- [50] item carregado -->
+  <div id="carrying" class="hidden">📦 PACOTE EM MÃOS</div>
+
+  <div id="clockbox"><span id="clock">12:00</span><span id="daynight">☀️</span></div>
+
+  <!-- contador de FPS e perfil gráfico atual (tecla G) -->
+  <div id="perfbox">
+    <span id="fps">--</span><span class="perf-unit">FPS</span>
+    <span id="preset-tag">MÉDIA</span>
+    <!-- [60] modo Deus (tecla M): voo livre pelo mapa -->
+    <span id="god-tag" class="hidden">MODO DEUS</span>
+  </div>
+</div>
+
+<!-- ==================== [56] CELULAR ==================== -->
+<div id="phone" class="hidden">
+  <div id="phone-body">
+    <div id="phone-notch"></div>
+    <div id="phone-screen">
+      <div id="phone-header">
+        <div id="phone-back">‹</div>
+        <div id="phone-title">Mensagens</div>
+        <div id="phone-signal">▂▄▆█</div>
+      </div>
+
+      <div id="phone-contacts">
+        <div class="phone-hint">Digite o número nas costas de um NPC</div>
+        <input id="phone-number" type="tel" maxlength="11" placeholder="Número (ex: 90210)" autocomplete="off">
+        <button id="phone-call">ABRIR CONVERSA</button>
+        <div class="phone-sub">CONVERSAS RECENTES</div>
+        <div id="phone-list"></div>
+      </div>
+
+      <div id="phone-chat" class="hidden">
+        <div id="chat-who"></div>
+        <div id="chat-log"></div>
+        <div id="chat-input-row">
+          <input id="chat-input" type="text" maxlength="120" placeholder="Mensagem..." autocomplete="off">
+          <button id="chat-send">➤</button>
+        </div>
+      </div>
+    </div>
+    <div id="phone-home"></div>
+  </div>
+  <div id="phone-tip">C ou ESC para fechar</div>
+</div>
+
+<!-- ==================== [39] TELA DE ABERTURA ==================== -->
+<div id="title-screen">
+  <div id="title-bg"></div>
+  <div id="title-content">
+    <h1 id="game-title"><span>CIDADE</span> <b>3D</b> <em>IMG</em></h1>
+    <p id="tagline">Entregue os pacotes antes que o tempo acabe.</p>
+
+    <div id="controls-grid">
+      <div class="ctl"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Mover</span></div>
+      <div class="ctl"><kbd>Mouse</kbd><span>Olhar</span></div>
+      <div class="ctl"><kbd>Scroll</kbd><span>Zoom</span></div>
+      <div class="ctl"><kbd>Shift</kbd><span>Correr</span></div>
+      <div class="ctl"><kbd>Espaço</kbd><span>Pular</span></div>
+      <div class="ctl"><kbd>F</kbd><span>Entrar / sair do veículo</span></div>
+      <div class="ctl"><kbd>V</kbd><span>Câmera interna / externa</span></div>
+      <div class="ctl"><kbd>E</kbd><kbd>Clique</kbd><span>Atirar</span></div>
+      <div class="ctl"><kbd>C</kbd><span>Celular</span></div>
+      <div class="ctl"><kbd>G</kbd><span>Qualidade gráfica</span></div>
+      <div class="ctl"><kbd>N</kbd><span>Dia / noite / ciclo</span></div>
+      <div class="ctl"><kbd>P</kbd><span>Movimento na cidade</span></div>
+      <!-- [60] voar / [61] movimento na cidade -->
+      <div class="ctl"><kbd>M</kbd><span>Modo Deus (voar)</span></div>
+      <div class="ctl"><kbd>ESC</kbd><span>Pausar / soltar mouse</span></div>
+    </div>
+
+    <!-- [8] desmarcado por padrão: o jogo começa sem limite de tempo -->
+    <label id="timer-toggle">
+      <input type="checkbox" id="timer-enabled">
+      <span>Limite de tempo (10 minutos)</span>
+    </label>
+
+    <!-- [13] ciclo dia/noite: pode ser congelado -->
+    <div id="cycle-choice">
+      <span class="choice-label">ILUMINAÇÃO</span>
+      <div class="choice-group" id="cycle-group">
+        <button type="button" class="choice active" data-cycle="ciclo">CICLO DIA/NOITE</button>
+        <button type="button" class="choice" data-cycle="dia">SEMPRE DIA</button>
+        <button type="button" class="choice" data-cycle="noite">SEMPRE NOITE</button>
+      </div>
+    </div>
+
+    <!-- [61] quanta gente e quantos carros — vale mudar durante o jogo com P -->
+    <div id="pop-choice">
+      <span class="choice-label">MOVIMENTO NA CIDADE</span>
+      <div class="choice-group" id="pop-group">
+        <button type="button" class="choice" data-pop="0">POUCA</button>
+        <button type="button" class="choice" data-pop="1">NORMAL</button>
+        <button type="button" class="choice active" data-pop="2">MOVIMENTADA</button>
+        <button type="button" class="choice" data-pop="3">CIDADE CHEIA</button>
+      </div>
+      <span class="choice-note">mais gente e mais carros custam FPS</span>
+    </div>
+
+    <!-- [62] só aparece quando existe uma partida em andamento por trás do menu -->
+    <button id="resume-title-btn" class="hidden">VOLTAR AO JOGO</button>
+    <button id="start-btn">INICIAR JOGO</button>
+    <div id="loading-note">carregando cidade...</div>
+    <!-- as escolhas acima ficam salvas no navegador -->
+    <button id="reset-cfg" type="button">restaurar padrões</button>
+  </div>
+</div>
+
+<!-- ==================== [48] PAUSA ==================== -->
+<div id="pause-screen" class="hidden">
+  <div class="panel">
+    <h2>PAUSADO</h2>
+    <p class="muted">O jogo está congelado. Clique para voltar.</p>
+    <button id="resume-btn">CONTINUAR</button>
+    <button id="quit-btn" class="ghost">VOLTAR AO MENU</button>
+  </div>
+</div>
+
+<!-- ==================== [35][40] FIM DE JOGO ==================== -->
+<div id="over-screen" class="hidden">
+  <div class="panel">
+    <h2 id="over-title">FIM DE JOGO</h2>
+    <p id="over-reason" class="muted"></p>
+    <div id="over-stats">
+      <div><b id="over-score">0</b><span>pontos</span></div>
+      <div><b id="over-deliveries">0</b><span>entregas</span></div>
+      <div><b id="over-time">0:00</b><span>sobreviveu</span></div>
+    </div>
+    <!-- [40] botão de reiniciar -->
+    <button id="restart-btn">JOGAR NOVAMENTE</button>
+  </div>
+</div>
+
+<div id="fatal" class="hidden"></div>
+
+<script type="module">
+  import { boot } from './src/main.js';
+  boot().catch((err) => {
+    console.error(err);
+    const el = document.getElementById('fatal');
+    el.classList.remove('hidden');
+    el.innerHTML = '<h3>Falha ao iniciar</h3><pre>' + (err && err.stack || err) + '</pre>' +
+      '<p>Verifique a conexão com a internet (o Three.js é carregado via CDN).</p>';
+  });
+</script>
+</body>
+</html>

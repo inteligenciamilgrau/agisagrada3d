@@ -1,0 +1,117 @@
+# ============================================================
+#  Cidade 3D IMG — arquivos que não entram no repositório
+# ============================================================
+# O jogo é estático: só HTML, CSS e módulos ES. Não há build,
+# não há dependências. Tudo que estiver aqui é ruído local.
+
+# --- ferramentas locais que o site não usa ---
+# O GitHub Pages é o próprio servidor: ele serve index.html, css/ e src/
+# sozinho. Estes dois existem só para rodar o jogo na máquina de quem
+# desenvolve, então ficam fora do repositório.
+server.js
+start.bat
+
+# --- dependências / build ---
+node_modules/
+jspm_packages/
+bower_components/
+dist/
+build/
+out/
+.cache/
+.parcel-cache/
+.vite/
+*.tsbuildinfo
+
+# --- logs e relatórios ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+logs/
+coverage/
+.nyc_output/
+
+# --- segredos e ambiente (nunca versionar) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+credentials.json
+
+# --- sistema operacional ---
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.stackdump
+# macOS
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# --- editores e IDEs ---
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+.history/
+
+# --- ferramentas de IA / assistentes ---
+.claude/
+.cursor/
+.aider*
+.continue/
+
+# --- capturas e material de gravação (projeto de vídeo) ---
+# O repositório publica o jogo, não o material bruto do vídeo.
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.wav
+*.mp3
+gravacoes/
+capturas/
+screenshots/
+temp/
+tmp/
+scratch/
+
+# --- arquivos temporários diversos ---
+*.tmp
+*.temp
+*.pid
+*.seed
+*.zip
+*.7z
+*.rar
