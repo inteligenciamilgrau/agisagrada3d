@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as THREE from '../../vendor/three.module.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 import { HALF, PLATOS } from '../config.js';
 import { clamp, smoothstep, lerp, makeRng } from '../utils.js';
 import { grassTexture, asphaltTexture, waterNormalTexture } from '../gfx/textures.js';
@@ -142,7 +142,7 @@ export function terrainHeight(x, z) {
 }
 
 export class Terrain {
-  constructor(scene, collision) {
+  constructor(scene, collision, quality = 'alta') {   // [FPS] quality controla as laminas de agua
     this.scene = scene;
     this.col = collision;
     this.group = new THREE.Group();
@@ -212,7 +212,9 @@ export class Terrain {
     const cz = (LAKE.minZ + LAKE.maxZ) / 2;
 
     // duas lâminas de água com normais rolando em sentidos opostos -> ondas cruzadas
-    for (let layer = 0; layer < 2; layer++) {
+    // [FPS] presets baixa/média usam só 1 lâmina (overdraw transparente é caro com bloom)
+    const camadas = this.quality === 'alta' ? 2 : 1;
+    for (let layer = 0; layer < camadas; layer++) {
       const geo = new THREE.PlaneGeometry(w, d, 40, 40);
       geo.rotateX(-Math.PI / 2);
 

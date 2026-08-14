@@ -75,6 +75,23 @@ export class CollisionWorld {
     const p = { minX, minZ, maxX, maxZ, yFn };
     if (porCima) this.platforms.unshift(p);
     else this.platforms.push(p);
+    return p;   // devolve a entrada (para remoção/restauração no MP)
+  }
+
+  // remove uma caixa de colisão (usado p/ tirar as paredes dos galpões IMG no MP)
+  removeBox(b) {
+    const k = this.boxes.indexOf(b);
+    if (k >= 0) this.boxes.splice(k, 1);
+    for (const arr of this.grid.values()) {
+      const j = arr.indexOf(b);
+      if (j >= 0) arr.splice(j, 1);
+    }
+  }
+
+  // religa uma caixa removida por removeBox (volta ao grid na posição original)
+  restoreBox(b) {
+    this.boxes.push(b);
+    this._insert(b, b.minX, b.minZ, b.maxX, b.maxZ);
   }
 
   addWaterZone(minX, minZ, maxX, maxZ, surfaceY) {
@@ -184,7 +201,7 @@ export class CollisionWorld {
   roofHeightAt(x, z) {
     let best = 0;
     for (const e of this.near(x, z, 0.1)) {
-      if (e.tag !== 'building' && e.tag !== 'helipad') continue;
+      if (e.tag !== 'building' && e.tag !== 'helipad' && e.tag !== 'img') continue;
       if (e.kind === 'box') {
         if (x >= e.minX && x <= e.maxX && z >= e.minZ && z <= e.maxZ && e.top > best) best = e.top;
       }

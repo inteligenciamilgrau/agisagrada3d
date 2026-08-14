@@ -78,7 +78,18 @@ export class Audio {
       this.musica.gain.value = this.ganhoMusica;
       this.musica.connect(this.master);
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    /*
+     * `resume()` devolve uma promise: se o gesto não foi aceito (ou o
+     * contexto nasceu suspenso por política de autoplay), ela REJEITA.
+     * Sem o catch, o erro morre no console e o jogo fica mudo sem
+     * explicação. Com ele, o próximo gesto (qualquer toque/tecla) tenta
+     * de novo — e em navegador que recusa o primeiro, o segundo toque
+     * costuma passar.
+     */
+    if (this.ctx.state !== 'running') {
+      const p = this.ctx.resume();
+      if (p && p.catch) p.catch(() => {});
+    }
   }
 
   /** Volume dos efeitos (0..1). */

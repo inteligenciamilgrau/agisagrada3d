@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { Sky } from 'three/addons/objects/Sky.js';
+import * as THREE from '../../vendor/three.module.js';
+import { Sky } from '../../vendor/jsm/objects/Sky.js';
 import { DAY, QUALITY, CAMERA } from '../config.js';
 import { clamp, invLerp, formatClock } from '../utils.js';
 import { starTexture } from './textures.js';
@@ -26,7 +26,20 @@ function makeSky() {
       console.warn('[sky] shader do Sky mudou; brilho do céu não foi reescalado');
       return;
     }
-    shader.fragmentShader = 'uniform float skyScale;\n' + shader.fragmentShader.replace(
+    // [S23-FIX] Preetham tem pow() com base que pode ficar NEGATIVA por
+    // precisao float no Chrome/ANGLE do Exynos RDNA2 -> pow(neg, frac) = NaN
+    // -> gl_FragColor NaN -> o ceu inteiro vira verde/lixo (flicks). Clamps
+    // de custo zero: em caso normal a base ja e >= 0, nada muda.
+    let frag = shader.fragmentShader;
+    frag = frag.replaceAll('pow( 93.885 - ( ( zenithAngle * 180.0 ) / pi ), -1.253 )',
+      'pow( max( 93.885 - ( ( zenithAngle * 180.0 ) / pi ), 0.0 ), -1.253 )');
+    frag = frag.replaceAll('pow( vSunE * ( ( betaRTheta + betaMTheta ) / ( vBetaR + vBetaM ) ) * ( 1.0 - Fex ), vec3( 1.5 ) )',
+      'pow( max( vSunE * ( ( betaRTheta + betaMTheta ) / ( vBetaR + vBetaM ) ) * ( 1.0 - Fex ), 0.0 ), vec3( 1.5 ) )');
+    frag = frag.replaceAll('pow( vSunE * ( ( betaRTheta + betaMTheta ) / ( vBetaR + vBetaM ) ) * Fex, vec3( 1.0 / 2.0 ) )',
+      'pow( max( vSunE * ( ( betaRTheta + betaMTheta ) / ( vBetaR + vBetaM ) ) * Fex, 0.0 ), vec3( 1.0 / 2.0 ) )');
+    frag = frag.replaceAll('pow( 1.0 - dot( up, vSunDirection ), 5.0 )',
+      'pow( max( 1.0 - dot( up, vSunDirection ), 0.0 ), 5.0 )');
+    shader.fragmentShader = 'uniform float skyScale;\n' + frag.replace(
       SKY_PATCH_TARGET,
       'gl_FragColor = vec4( retColor * skyScale, 1.0 );',
     );
@@ -41,16 +54,41 @@ function makeSky() {
  */
 export class SkySystem {
   constructor(graphics) {
+    console.log('[sky] construtor inicio, graphics.scene =', !!(graphics && graphics.scene));
     this.g = graphics;
     this.scene = graphics.scene;
     this.hour = DAY.startHour;
     this.nightFactor = 0;
     this._envTimer = 99;
+    this._lastEnvHour = -999;   // [perf F2] PMREM por evento
+    this._clockMin = -1;
+    this._clockCache = '';   // [perf F3-4] relogio: 1 formatacao por minuto
     this._paused = false;
     /** [13] 'ciclo' | 'dia' | 'noite' */
     this.cycleMode = 'ciclo';
     /** Segundos entre regenerações do mapa de ambiente (perfil de qualidade). */
-    this.envUpdateInterval = 4;
+    this.envUpdateInterval = 8;   // [perf] 4 -> 8 s: os reflexos mudam devagar
+
+    // [perf] cores reutilizaveis do ciclo dia/noite — antes cada quadro
+    // criava 5+ objetos Color novos e o GC atuava no meio do frame
+    this._c = {
+      warm: new THREE.Color(0xff9a4d),
+      white: new THREE.Color(0xfff6e8),
+      day: new THREE.Color(0xbdd6ee),
+      dusk: new THREE.Color(0xd98a52),
+      night: new THREE.Color(0x1c2c4c),
+      hemiDay: new THREE.Color(0xa8ccff),
+      hemiNight: new THREE.Color(0x3c5278),
+      groundDay: new THREE.Color(0x6b6152),
+      groundNight: new THREE.Color(0x0d1018),
+    };
+    this._fogScratch = new THREE.Color();
+    // [perf] cena temporaria UNICA do PMREM: reusada a cada regeneracao
+    // para nao recompilar o shader do ceu a cada 4-8 s (ver _updateEnvironment)
+    this._envTmp = new THREE.Scene();
+    this._envSky = makeSky();
+    this._envSky.scale.setScalar(1000);
+    this._envTmp.add(this._envSky);
 
     // ---------------------------------------------------------- domo do céu
     // O domo precisa caber DENTRO do far plane da câmera (CAMERA.far), senão
@@ -100,7 +138,7 @@ export class SkySystem {
 
     // ---------------------------------------------------------- lua
     const moonMat = new THREE.MeshBasicMaterial({
-      color: 0xfdf6e0, fog: false, transparent: true, depthTest: false,
+      color: 0xfdf6e0, fog: false, transparent: true, depthTest: true,
     });
     this.moon = new THREE.Mesh(new THREE.SphereGeometry(22, 24, 16), moonMat);
     this.moon.renderOrder = -998;
@@ -114,7 +152,9 @@ export class SkySystem {
     this.distMax = CAMERA.far;
     this.distLua = 1300;
 
+    console.log('[sky] construtor fim, chamando update inicial');
     this.update(0, new THREE.Vector3());
+    console.log('[sky] construtor completo OK');
   }
 
   /**
@@ -164,7 +204,7 @@ export class SkySystem {
       sizeAttenuation: false,
       transparent: true,
       opacity: 0,
-      depthTest: false,
+      depthTest: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       fog: false,
@@ -214,6 +254,7 @@ export class SkySystem {
   setHour(h) {
     this.hour = h;
     this._envTimer = 99;
+    this._lastEnvHour = -999;   // [perf F2] forca recalc no proximo update
     this._refreshSunState();
   }
 
@@ -221,7 +262,9 @@ export class SkySystem {
   _refreshSunState() {
     const phi = ((this.hour - 6) / 12) * Math.PI;      // 6h nasce, 18h se põe
     this.sunDir.set(Math.cos(phi), Math.sin(phi), 0.28).normalize();
-    this.nightFactor = 1 - clamp(invLerp(-0.14, 0.16, this.sunDir.y), 0, 1);
+    // [noite mais clara] escuridao maxima limitada a 60% do original
+    // (luz hemisferica, nevoeiro, environment e estrelas ficam mais suaves)
+    this.nightFactor = (1 - clamp(invLerp(-0.14, 0.16, this.sunDir.y), 0, 1)) * 0.6;
   }
 
   update(dt, focus) {
@@ -252,9 +295,7 @@ export class SkySystem {
     const above = elev > -0.05;
     if (above) {
       this.sun.position.copy(this.sunDir).multiplyScalar(320).add(focus);
-      const warm = new THREE.Color(0xff9a4d);
-      const white = new THREE.Color(0xfff6e8);
-      this.sun.color.copy(warm).lerp(white, clamp(invLerp(0.02, 0.42, elev), 0, 1));
+      this.sun.color.copy(this._c.warm).lerp(this._c.white, clamp(invLerp(0.02, 0.42, elev), 0, 1));
       this.sun.intensity = clamp(elev * 5.4, 0, QUALITY.sunIntensity);
     } else {
       // luar: direção oposta, azulado e fraco
@@ -266,8 +307,8 @@ export class SkySystem {
 
     // ------------------------------------------------ preenchimento
     this.hemi.intensity = QUALITY.hemiIntensity * (1 - n * 0.62);
-    this.hemi.color.setHex(0xa8ccff).lerp(new THREE.Color(0x24304a), n);
-    this.hemi.groundColor.setHex(0x6b6152).lerp(new THREE.Color(0x0d1018), n);
+    this.hemi.color.copy(this._c.hemiDay).lerp(this._c.hemiNight, n);
+    this.hemi.groundColor.copy(this._c.groundDay).lerp(this._c.groundNight, n);
 
     // ------------------------------------------------ estrelas e lua
     this.stars.material.opacity = clamp((n - 0.35) / 0.5, 0, 1) * 0.95;
@@ -278,11 +319,8 @@ export class SkySystem {
     }
 
     // ------------------------------------------------ névoa segue o horizonte
-    const dayFog = new THREE.Color(0xbdd6ee);
-    const duskFog = new THREE.Color(0xd98a52);
-    const nightFog = new THREE.Color(0x0c1220);
-    const fogCol = dayFog.clone().lerp(duskFog, dusk * 0.75).lerp(nightFog, n);
-    this.scene.fog.color.copy(fogCol);
+    this._fogScratch.copy(this._c.day).lerp(this._c.dusk, dusk * 0.75).lerp(this._c.night, n);
+    this.scene.fog.color.copy(this._fogScratch);
     this.scene.fog.near = QUALITY.fogNear;
     this.scene.fog.far = QUALITY.fogFar - n * 260;
 
@@ -290,7 +328,11 @@ export class SkySystem {
 
     // ------------------------------------------------ reflexos (PMREM)
     this._envTimer += dt;
-    if (this._envTimer > this.envUpdateInterval) {
+    // [perf F2] PMREM por evento: recalcula so quando a hora do jogo mudou >= 2h
+    // (ou fallback no modo ciclo). Hora congelada (dia/noite fixo) = reflexos fixos = zero hitches.
+    const hourDelta = Math.abs(this.hour - this._lastEnvHour);
+    if (hourDelta >= 2.0 || (!this.cycleFrozen && this._envTimer > this.envUpdateInterval)) {
+      this._lastEnvHour = this.hour;
       this._envTimer = 0;
       this._updateEnvironment();
     }
@@ -311,31 +353,32 @@ export class SkySystem {
 
   /** Gera o mapa de ambiente a partir do próprio céu — reflexos corretos na hora certa. */
   _updateEnvironment() {
-    const tmp = new THREE.Scene();
-    const sky = makeSky();                  // mesma escala de brilho do domo
-    sky.scale.setScalar(1000);
-    const su = sky.material.uniforms;
+    // [perf] Reusa o MESMO sky temporario. Antes cada regeneracao criava um
+    // Sky novo, e o material novo recompilava o shader do ceu — um pico de
+    // CPU/GPU a cada 4-6 s que derrubava o FPS bem no meio do jogo.
+    const su = this._envSky.material.uniforms;
     const cu = this.sky.material.uniforms;
     su.turbidity.value = cu.turbidity.value;
     su.rayleigh.value = cu.rayleigh.value;
     su.mieCoefficient.value = cu.mieCoefficient.value;
     su.mieDirectionalG.value = cu.mieDirectionalG.value;
     su.sunPosition.value.copy(this.sunDir);
-    tmp.add(sky);
 
-    const rt = this.g.pmrem.fromScene(tmp);
+    console.log('[sky] _updateEnvironment: envTmp =', !!this._envTmp, '| pmrem =', !!(this.g && this.g.pmrem));
+    const rt = this.g.pmrem.fromScene(this._envTmp);
     // libera o render target anterior inteiro, não só a textura — senão
     // o mapa de ambiente vaza memória de GPU a cada regeneração
     if (this._envRT) this._envRT.dispose();
     this._envRT = rt;
     this.scene.environment = rt.texture;
     // à noite os reflexos do céu quase somem
-    this.scene.environmentIntensity = QUALITY.envIntensity * (1 - this.nightFactor * 0.86);
-
-    sky.geometry.dispose();
-    sky.material.dispose();
+    this.scene.environmentIntensity = QUALITY.envIntensity * (1 - this.nightFactor * 0.72);
   }
 
-  get clockText() { return formatClock(this.hour); }
+  get clockText() {
+    const m = Math.floor(this.hour * 60);           // [perf F3-4] 1 formatacao por minuto
+    if (m !== this._clockMin) { this._clockMin = m; this._clockCache = formatClock(this.hour); }
+    return this._clockCache;
+  }
   get isNight() { return this.nightFactor > 0.5; }
 }

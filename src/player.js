@@ -1,8 +1,7 @@
-import * as THREE from 'three';
-import { PLAYER, CURB_H } from './config.js';
+import * as THREE from '../vendor/three.module.js';
+import { PLAYER, CURB_H, CAMERA } from './config.js';
 import { clamp, damp, dampAngle } from './utils.js';
-import { VoxelFigure } from './ent/voxel.js';
-import { HUMANOIDES } from './ent/voxeldef.js';
+import { Human } from './ent/human.js';
 import { Loro } from './ent/loro.js';
 import { SaciBot } from './ent/sacibot.js';
 
@@ -10,18 +9,67 @@ import { SaciBot } from './ent/sacibot.js';
  * [14] Jogador em terceira pessoa. [11] WASD relativo à câmera,
  * [30] Shift corre, [36] espaço pula, [31] colide com prédios/postes/árvores.
  *
- * O jogador é o **Bob "Indiana" Milgrau**: boneco voxel com jaqueta de
- * couro, fedora, óculos e o Prompt Mágico na mão. Ele usa o mesmo
- * `VoxelFigure` dos inimigos e expõe a mesma API do antigo `Human`
+ * O jogador é o **Bob "Indiana" Milgrau**: jaqueta de couro, jeans e
+ * cabelo escuro, montado com o MESMO `Human` articulado dos pedestres
+ * (braços, pernas, cabeça e cabelo de verdade). Expõe a mesma API
  * (`root`, `pivot`, `update`, `carrying`), então nada em volta mudou.
  */
+/**
+ * [27] Pistola voxel do Bob, desenhada ao longo de -Y do antebraço
+ * direito: quando o braço ergue para mirar, o cano aponta para a frente.
+ * Exportada para o multiplayer reusar (arma na mão dos avatares).
+ */
+export function makePistola() {
+  const g = new THREE.Group();
+  const mat = (hex, m, r) => new THREE.MeshStandardMaterial({ color: hex, metalness: m, roughness: r });
+  const ferro = mat(0x2a2f38, 0.45, 0.5);
+  const escuro = mat(0x16191f, 0.3, 0.6);
+  const dourado = mat(0xffb020, 0.7, 0.25);
+  const bloco = (w, h, d, x, y, z, m) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    g.add(mesh);
+    return mesh;
+  };
+  // cano (aponta para a frente quando o braço ergue)
+  bloco(0.05, 0.26, 0.06, 0, -0.46, 0, escuro);
+  // corpo da pistola
+  bloco(0.07, 0.14, 0.08, 0, -0.26, 0, ferro);
+  // coroa traseira / cão
+  bloco(0.055, 0.07, 0.055, 0, -0.16, 0, escuro);
+  // detalhe dourado no corpo
+  bloco(0.075, 0.05, 0.09, 0, -0.30, 0, dourado);
+  // guarda-mato
+  bloco(0.06, 0.05, 0.07, 0, -0.19, 0.02, escuro);
+  return g;
+}
+
 export class Player {
   constructor(scene, collision) {
     this.col = collision;
 
-    this.human = new VoxelFigure(HUMANOIDES.bob);
+    /*
+     * O Bob usa o mesmo `Human` dos NPCs da cidade: braços e pernas
+     * articulados, cabeça e cabelo modelados — bem mais humanóide que o
+     * boneco de caixas. As cores são as dele: jaqueta de couro, jeans e
+     * cabelo castanho-escuro. `fullShadow` deixa o corpo inteiro projetar
+     * sombra, porque o jogador é uma entidade só, sempre em primeiro plano.
+     */
+    this.human = new Human({
+      shirt: 0x6b4423,   // jaqueta de couro
+      pants: 0x3d4a5c,   // jeans
+      skin: 0xd9a066,    // pele
+      hair: 0x2a1f14,    // cabelo castanho-escuro
+      fullShadow: true,
+    });
     this.human.root.name = 'player';
     scene.add(this.human.root);
+
+    // [27] a pistola do Bob, presa à mão direita: abaixada ao andar,
+    // erguida na posição de tiro quando ele segura ATIRAR
+    this.pistola = makePistola();
+    this.human.setWeapon(this.pistola);
 
     // o Loro Estocástico voa junto — mascote da comunidade, não enfeite
     this.loro = new Loro(scene);
@@ -68,13 +116,18 @@ export class Player {
     t3.position.y = 0.142; t3.rotation.x = Math.PI / 2;
     g.add(t3);
 
-    g.position.set(0, 1.16, 0.36);      // à frente do peito, entre as mãos
+    g.position.set(0, 1.22, 0.36);      // na altura do peito, entre as mãos
     return g;
   }
 
   setCarrying(on) {
     this.human.carrying = on;
     this.pack.visible = on;
+  }
+
+  /** [27] Posição de tiro: braços erguidos com a pistola. */
+  setAiming(on) {
+    this.human.aiming = on;
   }
 
   setVisible(v) {
@@ -151,15 +204,10 @@ export class Player {
     const wanted = maxSpeed * Math.min(1, mag);
     this.speed = damp(this.speed, wanted, PLAYER.accel / Math.max(1, maxSpeed), dt);
 
-    /*
-     * [11][14] O MOUSE define para onde o jogador olha, não o movimento.
-     * O corpo acompanha a câmera mesmo parado, então WASD vira deslocamento
-     * relativo: A e D andam de lado sem virar as costas, e o tiro sai sempre
-     * na direção em que o personagem está encarando.
-     *
-     * A frente da câmera no chão é (-sin, -cos) e o personagem olha para +Z,
-     * logo a rotação do corpo é o yaw da câmera + PI.
-     */
+    // [FPS] O CORPO gira com o mouse (estilo GTA): parado ou andando, o
+    // boneco vira para a MESMA direção da câmera (viewYaw = centro da
+    // tela). O movimento usa a mesma direção — nunca fica torto/diagonal,
+    // e olhar ao redor vira o corpo junto com a câmera.
     this.yaw = dampAngle(this.yaw, camYaw + Math.PI, PLAYER.turnSmooth, dt);
     if (mag > 0.001) this._move.set(dx, 0, dz);
 
@@ -167,6 +215,7 @@ export class Player {
     if (this.grounded && input.jumping && !this.inWater) {
       this.vy = PLAYER.jumpSpeed;
       this.grounded = false;
+      this.human._jumpT = 0.22;   // [ANIM] impulso do pulo (perna de trás estica)
       if (this.onPulo) this.onPulo();
     }
     this.vy -= PLAYER.gravity * dt;
@@ -239,7 +288,7 @@ export class Player {
     // ------------------------------------------------ malha
     this.human.root.position.copy(this.pos);
     this.human.root.rotation.y = this.yaw;
-    this.human.update(dt, this.grounded ? this.speed : this.speed * 0.35);
+    this.human.update(dt, this.grounded ? this.speed : this.speed * 0.35, { air: this.grounded ? 0 : 1, run: !!input.running });
     this.loro.update(dt, this.pos, this.yaw, this.speed);
     this.saci.update(dt, this.pos, this.yaw);
 

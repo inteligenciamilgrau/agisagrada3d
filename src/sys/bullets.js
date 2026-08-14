@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { GAME, PED, CAR } from '../config.js';
 
 const MAX_BULLETS = 64;
@@ -22,6 +22,10 @@ export class BulletSystem {
     this.mesh = new THREE.InstancedMesh(geo, mat, MAX_BULLETS);
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
+    // [TIRO INVISIVEL] bala invisivel (solo e MP): so a marca de acerto fica visivel
+    this.mesh.visible = false;
+    // [TIRO INVISIVEL] bala invisivel (solo e MP): so a marca de acerto fica visivel
+    this.mesh.visible = false;
 
     this._off = new THREE.Matrix4().makeScale(0.0001, 0.0001, 0.0001);
     this.bullets = [];
@@ -44,6 +48,8 @@ export class BulletSystem {
     this.targets = { peds: null, cars: null, foes: null };
     /** Veículo pilotado pelo jogador: os tiros saem de dentro dele e não devem acertá-lo. */
     this.ignoreCar = null;
+    /** Inimigo que dispara (o próprio Bob no MP): a bala nasce no peito dele e não pode acertá-lo. */
+    this.ignoreFoe = null;
 
     this._tmp = new THREE.Vector3();
     this._q = new THREE.Quaternion();
@@ -79,7 +85,7 @@ export class BulletSystem {
     b.p.copy(origin).addScaledVector(direction, 1.2);
     b.v.copy(direction).multiplyScalar(GAME.bulletSpeed);
 
-    this.fx.impact(b.p, direction, { r: 3.0, g: 2.4, b: 1.2 });
+    this.fx.impact(b.p, direction, { r: 3.0, g: 2.4, b: 1.2 }, 0.1);   // brilho do cano 90% menor
     return true;
   }
 
@@ -148,7 +154,7 @@ export class BulletSystem {
     // --- inimigos da campanha (arena de fase)
     if (this.targets.foes) {
       for (const foe of this.targets.foes) {
-        if (!foe.vivo) continue;
+        if (!foe.vivo || foe === this.ignoreFoe) continue;
         const c = foe.root.position;
         const t = this._segSphere(
           from, dir, dist, c.x, c.y + foe.alturaAlvo, c.z, foe.raioAcerto,

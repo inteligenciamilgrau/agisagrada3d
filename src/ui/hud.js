@@ -32,6 +32,7 @@ export class HUD {
       toasts: $('toasts'),
       carrying: $('carrying'),
       crosshair: $('crosshair'),
+      redDot: $('red-dot'),
       hitmarker: $('hitmarker'),
       clock: $('clock'),
       daynight: $('daynight'),
@@ -46,6 +47,10 @@ export class HUD {
     this._shownSpeed = 0;
     this._fpsAcc = 0;
     this._fpsFrames = 0;
+    this._lastScore = -1;
+    this._lastDeliveries = -1;
+    this._lastClockText = null;
+    this._lastIsNight = null;
   }
 
   /** Contador de FPS, atualizado 4x por segundo para o número não tremer. */
@@ -92,8 +97,16 @@ export class HUD {
   }
 
   // ------------------------------------------------------------------ números
-  setScore(v) { this.el.score.textContent = v; }
-  setDeliveries(v) { this.el.deliveries.textContent = v; }
+  setScore(v) {
+    if (v === this._lastScore) return;              // [perf F3-4] HUD so quando muda
+    this._lastScore = v;
+    this.el.score.textContent = v;
+  }
+  setDeliveries(v) {
+    if (v === this._lastDeliveries) return;
+    this._lastDeliveries = v;
+    this.el.deliveries.textContent = v;
+  }
 
   /** [8] Tempo restante — pode estar desativado. */
   setTimer(seconds, enabled) {
@@ -109,6 +122,9 @@ export class HUD {
   }
 
   setClock(text, isNight) {
+    if (text === this._lastClockText && isNight === this._lastIsNight) return;  // [perf F3-4]
+    this._lastClockText = text;
+    this._lastIsNight = isNight;
     this.el.clock.textContent = text;
     this.el.daynight.textContent = isNight ? '🌙' : '☀️';
   }
@@ -155,9 +171,7 @@ export class HUD {
   }
 
   recoil() {
-    const c = this.el.crosshair;
-    c.classList.add('recoil');
-    setTimeout(() => c.classList.remove('recoil'), 70);
+    // [FPS] sem pulso: a mira fica parada mesmo ao atirar (sniper)
   }
 
   setOnTarget(on) {
@@ -167,6 +181,20 @@ export class HUD {
   setCrosshairVisible(v) {
     this.el.crosshair.style.opacity = v ? '1' : '0';
   }
+
+  /** [heli] Mira do helicóptero fica no centro da tela (o míssil vai para onde o jogador olha). */
+  setCrosshairCenter(on) {
+    this.el.crosshair.classList.toggle('center', !!on);
+  }
+
+  /** [FPS] Zoom de mira: a mira desliza do canto (62%, 2/5) para o centro. */
+  setAds(on) {
+    this.el.crosshair.classList.toggle('ads', on);
+    // [CODM-FIX] Red Dot óptico: ponto vermelho no centro durante o ADS,
+    // renderizado por cima da arma 3D — a mira nunca é obstruída pelo slide
+    this.el.redDot.style.opacity = on ? '1' : '0';
+  }
+
 
   // ------------------------------------------------------------------ [28] velocímetro
   showSpeedo(on) {
@@ -297,5 +325,6 @@ export class HUD {
     this.showHeliPanel(false);
     this.setGod(false);
     this.setPrompt(null);
+    this.el.crosshair.classList.remove('ads');   // [FPS] reset devolve a mira ao canto
   }
 }

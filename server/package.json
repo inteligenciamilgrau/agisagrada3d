@@ -1,0 +1,17 @@
+{
+  "name": "bob-agi-server",
+  "version": "0.1.0",
+  "description": "Servidor autoritativo do Bob em Busca da AGI Sagrada 3D — modos MULTIPLAYER e BATTLE ROYALE",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.21.2"
+  }
+}

@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as THREE from '../../vendor/three.module.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 import { CURB_H, BLOCK_INNER, CABLE } from '../config.js';
 import { makeRng, rngRange, clamp } from '../utils.js';
 import { rockTexture, helipadTexture, glowTexture } from '../gfx/textures.js';

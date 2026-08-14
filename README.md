@@ -1048,3 +1048,31 @@ Quase tudo que dá vontade de mexer está em `src/config.js`:
 
 Se ainda estiver pesado, aperte `G` até BAIXA e `P` até POUCA — agora são duas
 alavancas independentes.
+
+---
+
+## 🌐 Jogue online (servidor oficial)
+
+O jogo está em produção 24/7 numa VM grátis da Oracle Cloud:
+
+**👉 https://tiroteio.duckdns.org**
+
+- WebSocket: `wss://tiroteio.duckdns.org/ws`
+- Todo o detalhamento do servidor (acesso SSH, deploy, troubleshooting) está em
+  **[DEPLOY_ORACLE.md](DEPLOY_ORACLE.md)**.
+
+---
+
+## 🤖 Desenvolvido com AI Coding IDE mobile
+
+O **multiplayer** deste projeto foi implementado e roda 24/7 num servidor
+**Oracle Cloud** — este repositório modificado é o
+**[saboracaiteria](https://github.com/saboracaiteria)**.
+
+Modificado e mantido por **@nildoxz** usando o
+**AI Coding IDE mobile** — a IDE com IA que roda nativa no Android, com
+terminal, Git/GitHub integrado e deploy 1-clique para a VM.
+
+- 👤 **@nildoxz** — autor das modificações, otimizações e deploys
+- 📱 **AI Coding IDE mobile** — ferramenta de desenvolvimento usada neste projeto
+- 💬 Telegram do AI Coding IDE: **https://t.me/+YzxicUy7gTo4YTIx**

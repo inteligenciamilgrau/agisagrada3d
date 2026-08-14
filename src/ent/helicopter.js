@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as THREE from '../../vendor/three.module.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 import { HELI } from '../config.js';
 import { clamp, damp, angleDelta } from '../utils.js';
 
@@ -9,13 +9,17 @@ import { clamp, damp, angleDelta } from '../utils.js';
  * [49] Só dá para sair quando está perto do chão.
  */
 export class Helicopter {
-  constructor(scene, collision) {
+  constructor(scene, collision, cor = 0x1f4f8f) {
+    this.cor = cor;
     this.col = collision;
     this.root = new THREE.Group();
     this.root.name = 'helicopter';
     scene.add(this.root);
 
     this._build();
+    // [INVISIVEL-FIX] heli nunca é cortado pelo frustum culling (câmera do
+    // outro heli em altitude deixava o aparelho invisível mesmo de frente)
+    this.root.traverse(o => { if (o.isMesh || o.isSprite) o.frustumCulled = false; });
 
     this.vel = new THREE.Vector3();
     this.yaw = 0;
@@ -29,7 +33,7 @@ export class Helicopter {
 
   _build() {
     const bodyMat = new THREE.MeshPhysicalMaterial({
-      color: 0x1f4f8f, roughness: 0.34, metalness: 0.55,
+      color: this.cor, roughness: 0.34, metalness: 0.55,
       clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 1.4,
     });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x22262d, roughness: 0.5, metalness: 0.75 });
@@ -324,6 +328,24 @@ export class Helicopter {
     this.root.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ');
 
     this.searchlight.intensity = nightFactor > 0.4 ? 900 : 0;
+  }
+
+  /**
+   * [MP] Atualiza SÓ o visual (rotor, beacon, holofote) — a posição, o rumo
+   * e a física vêm do servidor (server/helis.js), então nada é integrado
+   * aqui. O `piloted` é setado pelo cliente a partir do snapshot.
+   */
+  mpUpdate(dt, nightFactor = 0) {
+    const piloted = !!this.piloted;
+    const targetSpin = piloted ? 1 : (this.isLanded ? 0.08 : 1);
+    this.rotorSpin = damp(this.rotorSpin, targetSpin, 1.4, dt);
+    this.rotorAngle += dt * HELI.rotorSpeed * this.rotorSpin;
+    this.rotorHub.rotation.y = this.rotorAngle;
+    this.tailHub.rotation.x = -this.rotorAngle * 2.4;
+    this.rotorDisc.material.opacity =
+      clamp((this.rotorSpin - 0.55) / 0.45, 0, 1) * 0.22 * (1 - nightFactor * 0.8);
+    this.beacon.visible = Math.sin(performance.now() * (piloted ? 0.009 : 0.006)) > 0;
+    this.searchlight.intensity = (piloted && nightFactor > 0.4) ? 900 : 0;
   }
 
   _settleOnGround(dt) {

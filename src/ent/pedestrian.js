@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { GRID, CURB_H, PED, WALK_OFF } from '../config.js';
 import { nodeCoord, makeRng, rngRange, rngInt, dist2Sq, swapRemove } from '../utils.js';
 import { Human } from './human.js';
@@ -15,6 +15,8 @@ const PED_OFF = WALK_OFF;
  * Elas circulam por um grafo de calçadas e só atravessam a rua na faixa,
  * quando o semáforo de pedestre abre [4][21].
  */
+const _A = new THREE.Vector3(); // [perf F3-4] pool de vetor: zero alocacao por frame
+
 export class PedestrianSystem {
   constructor(scene, collision, traffic, seed = 31337) {
     this.scene = scene;
@@ -179,8 +181,9 @@ export class PedestrianSystem {
     ped.t = 0;
   }
 
-  update(dt) {
-    const A = new THREE.Vector3();
+  update(dt, refX = null, refZ = null) {
+    const A = _A;
+    const FAR2 = 60 * 60;   // [perf F3-4] LOD animacao: >60 m -> 30 Hz
     for (const ped of this.peds) {
       if (!ped.alive) continue;
 
@@ -195,7 +198,7 @@ export class PedestrianSystem {
           ped.pendingEdge = null;
         } else {
           // parado na esquina, olhando o semáforo
-          ped.human.update(dt, 0);
+          this._anim(ped, dt, 0, refX != null && dist2Sq(ped.human.root.position.x, ped.human.root.position.z, refX, refZ) > FAR2);
           continue;
         }
       }
@@ -234,11 +237,17 @@ export class PedestrianSystem {
       A.set(px, py, pz);
       ped.human.root.position.copy(A);
       ped.human.root.rotation.y = Math.atan2(dx, dz);
-      ped.human.update(dt, spd);
+      this._anim(ped, dt, spd, refX != null && dist2Sq(px, pz, refX, refZ) > FAR2);
     }
   }
 
   // ------------------------------------------------------------------ consultas
+  _anim(ped, dt, spd, far) {
+    if (!far) { ped.human.update(dt, spd); ped.lodAcc = 0; return; }
+    ped.lodAcc = (ped.lodAcc || 0) + dt;
+    if (ped.lodAcc >= 1 / 30) { ped.human.update(ped.lodAcc, spd); ped.lodAcc = 0; }
+  }
+
   nearest(x, z, maxDist) {
     let best = null, bestD = maxDist * maxDist;
     for (const p of this.peds) {
@@ -279,6 +288,12 @@ export class PedestrianSystem {
   }
 
   get count() { return this.peds.length; }
+
+  setNight(n) {
+    for (const p of this.peds) {
+      if (p.alive && p.human) p.human.setNight(n);
+    }
+  }
 }
 
 export { PED_OFF };

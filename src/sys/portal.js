@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { PHASES, liberada } from '../story/story.js';
 import { CORCOVADO, PAO } from '../world/landmarks.js';
 import { HERCILIO } from '../world/brasil.js';

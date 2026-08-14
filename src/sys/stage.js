@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { Foe, FICHAS, CHEFES } from '../ent/foe.js';
 
 /**
@@ -131,11 +131,20 @@ export class StageRunner {
   /** Um ponto na saída do marco daquela fase. */
   _pontoDeEntrada(i, total) {
     const L = this.fase.local || { x: 0, z: 0 };
-    // leque em volta do marco: espalha para não nascerem empilhados
-    const ang = (i / Math.max(1, total)) * Math.PI * 2 + Math.random() * 0.7;
-    const r = 16 + Math.random() * 14;
-    const x = L.x + Math.cos(ang) * r, z = L.z + Math.sin(ang) * r;
-    return { x, z, y: this.col ? this.col.groundHeightAt(x, z, 5) : 0 };
+    const col = this.col;
+    // leque em volta do marco: espalha para não nascerem empilhados.
+    // [FIX-prédios] tenta até achar um ponto na RUA: se cair dentro de um
+    // prédio (isBlocked), o inimigo nascia preso dentro da caixa e não
+    // conseguia sair — com o resolveCircle ativo ele ficaria espremido na
+    // parede interna para sempre.
+    for (let tent = 0; tent < 14; tent++) {
+      const ang = (i / Math.max(1, total)) * Math.PI * 2 + Math.random() * 0.7 + tent * 0.9;
+      const r = 16 + Math.random() * 14;
+      const x = L.x + Math.cos(ang) * r, z = L.z + Math.sin(ang) * r;
+      if (col && col.isBlocked(x, z, 0.9, 0.5)) continue;   // dentro de prédio/quarteirão
+      return { x, z, y: col ? col.groundHeightAt(x, z, 5) : 0 };
+    }
+    return { x: L.x, z: L.z, y: col ? col.groundHeightAt(L.x, L.z, 5) : 0 };
   }
 
   /**

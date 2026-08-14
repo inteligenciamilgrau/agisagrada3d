@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as THREE from '../../vendor/three.module.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 import { GRID, CURB_H, TRAFFIC, SIGNAL_OFF, NIGHT } from '../config.js';
 import { nodeCoord } from '../utils.js';
 

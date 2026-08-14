@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../vendor/three.module.js';
 import {
   PLAYER, CAMERA, CAR, HELI, GAME, DAY, CURB_H, QUALITY,
   PRESETS, DEFAULT_PRESET, POPULATIONS, DEFAULT_POPULATION, CABLE,
@@ -32,11 +32,14 @@ import { Phone } from './ui/phone.js';
 import { Settings } from './settings.js';
 import { Keybinds } from './keys.js';
 import { KeysScreen } from './ui/keysscreen.js';
+import { criarHudEditor } from './ui/hudeditor.js';
+import { criarPausa } from './ui/pause.js';
 import { TouchControls, ehToque } from './ui/touch.js';
 
 // ---- campanha: Bob em Busca da AGI Sagrada
 import { carregarCampanha, salvarCampanha, zerarCampanha, proximaFase } from './story/story.js';
 import { Dialogue } from './ui/dialogue.js';
+import { CampoTiro } from './range.js';
 import { PlanScreen } from './ui/plan.js';
 import { PortalSystem } from './sys/portal.js';
 import { StageRunner } from './sys/stage.js';
@@ -46,6 +49,7 @@ import { Canetadas } from './sys/canetadas.js';
 import { HomingMissiles } from './sys/homing.js';
 import { Fireballs } from './sys/fireballs.js';
 import { Drops } from './sys/drops.js';
+import { aimAssist } from './util/aim.js';
 import { CHEFES } from './ent/foe.js';
 import { Audio } from './sys/audio.js';
 import { Music } from './sys/music.js';
@@ -73,6 +77,7 @@ export class Game {
     this.toque = false;
 
     this.gfx = new Graphics(canvas);
+    window.__diag = 'gfx=' + !!this.gfx + ' scene=' + !!(this.gfx && this.gfx.scene) + ' cam=' + !!(this.gfx && this.gfx.camera);
     this.col = new CollisionWorld();
     this.col.terrainFn = terrainHeight;
 
@@ -94,10 +99,31 @@ export class Game {
     this.music = new Music(this.audio);
     this.dialogue.onLetra = () => this.audio.blip();
 
+    // tela de PAUSA única (solo, DM e BR): handlers ligados no _wireUI
+    // e o Match (MP) os substitui enquanto estiver ativo
+    this.pausa = criarPausa();
+
+    // [Android] botão voltar da barra de navegação = pausa (igual ao ESC)
+    window.addEventListener('popstate', () => {
+      if (this.state === 'playing' || this.state === 'paused') {
+        try { history.pushState(null, ''); } catch {}
+        if (this.state === 'paused') this.retomar();
+        else this.pausar();
+      }
+    });
+
     this._tmpV = new THREE.Vector3();
     this._focus = new THREE.Vector3();
     this._aimOrigin = new THREE.Vector3();
     this._aimDir = new THREE.Vector3();
+
+    // ---- [perf] telemetria do frame: sombra diferida + resolucao dinamica
+    this._lastT = 0;       // timestamp do frame anterior
+    this._frameMs = 0;     // duracao do ultimo frame completo (update+render)
+    this._ema = 0;         // media exponencial do frame time
+    this._boostT = 0;      // tempo acumulado com folga para devolver resolucao
+    this._shadowTick = 0;  // alterna a atualizacao do mapa de sombras
+    this._aimTick = 0;     // alterna o trace da mira
   }
 
   // ==================================================================
@@ -111,7 +137,7 @@ export class Game {
     };
 
     await step('gerando terreno...', () => {
-      this.terrain = new Terrain(this.gfx.scene, this.col);
+      this.terrain = new Terrain(this.gfx.scene, this.col, this.gfx.preset?.id || 'alta');  // [FPS] 1 lamina de agua fora do preset ALTA
       this.terrain.build();                                  // [52]
     });
 
@@ -198,6 +224,7 @@ export class Game {
       this.minimap = new Minimap($('minimap'), this.city, $('compass-n'));  // [10]
       this.phone = new Phone(this.peds);                                    // [56]
       this.keys = new KeysScreen(this.binds);        // tela de config de teclas
+      this.hudEditor = criarHudEditor(() => !!this._mp);               // editor de HUD (estilo CODM)
       this.touch = new TouchControls(this.input);    // analógico e botões na tela
 
       this._wireUI();
@@ -341,15 +368,42 @@ export class Game {
      * menos no caminho de quem só queria mexer numa configuração.
      */
     this.input.onLockChange = (locked) => {
-      if (!locked && this.state === 'playing' && !this.phone.open) {
-        this.toTitle();
-      }
+      if (locked) { clearTimeout(this._reLock); return; }
+      if (this.state !== "playing" || this.phone.open) return;
+      // [FPS] Perda acidental (alt-tab, redimensionar, clique fora): tenta
+      // re-travar em 250 ms para não "desligar" sozinho. No ESC intencional
+      // o Chrome recusa o re-lock por ~1 s e o timeout cai no menu normal.
+      clearTimeout(this._reLock);
+      this._reLock = setTimeout(() => {
+        if (this.state !== "playing" || this.phone.open) return;
+        this.input.requestLock();
+        setTimeout(() => {
+          if (!this.input.locked && this.state === "playing" && !this.phone.open) {
+            this.pausar();
+          }
+        }, 300);
+      }, 250);
     };
 
     this.canvas.addEventListener('mousedown', () => {
       if (this.toque) return;               // no celular não há ponteiro para prender
       if (this.state === 'playing' && !this.phone.open) this.input.requestLock();
     });
+
+
+    // ---------------------------------------------------- [Áudio] primeiro gesto
+    /*
+     * O navegador só deixa o WebAudio tocar depois de um gesto do usuário.
+     * O clique no botão INICIAR costuma bastar — mas no celular (e em
+     * páginas HTTPS como o GitHub Pages) o `click` sintetizado nem sempre
+     * conta como gesto confiável, e o AudioContext nasce suspenso: jogo
+     * mudo mesmo clicando. A solução é acordar o áudio no PRIMEIRO
+     * pointerdown/tecla em QUALQUER lugar da tela (dispara antes do click
+     * e cobre toque, caneta e mouse), não só no botão.
+     */
+    document.addEventListener('pointerdown', () => this.audio.acordar(), true);
+    document.addEventListener('keydown', () => this.audio.acordar(), true);
+
 
     // ---------------------------------------------------- ações (teclado e toque)
     /*
@@ -365,7 +419,8 @@ export class Game {
         if (this._opcoesAbertas) { this._abrirOpcoes(false); return; }
         if (this.plan.aberto) { this.plan.fechar(); return; }
         if (this.phone.open) { this.phone.close(); return; }
-        if (this.state === 'playing') this.toTitle();
+        if (this.pausa.aberto()) { this.retomar(); return; }
+        if (this.state === 'playing') this.pausar();
         // [62] no menu principal com partida em andamento, ESC volta para ela
         else if (this.state === 'title' && this.hasGame) this.resumeFromTitle();
         return;
@@ -495,8 +550,12 @@ export class Game {
     $('open-options').addEventListener('click', () => this._abrirOpcoes(true));
     $('options-close').addEventListener('click', () => this._abrirOpcoes(false));
     $('open-keys').addEventListener('click', () => this.keys.abrir());
+    this.hudEditor.onAbrir(() => this.keys.fechar());
+    this.hudEditor.onFechar(() => this.keys.abrir());
+    this.hudEditor.carregarLayout();
     // trocou uma tecla: as dicas do HUD mudam junto, na hora
     this.keys.onMudou = () => this._atualizarRotulos();
+    this._ligarPausaSolo();
 
     // ---------------------------------------------------- celular
     this.phone.getContext = () => ({
@@ -577,6 +636,7 @@ export class Game {
     this.mode = 'foot';
     this.god = false;
     this.cableCabin = null;
+    this.camera.setAds(false);            // [FPS] partida nova nunca abre mirando
     this.hud.setGod(false);
 
     // uma partida nova não pode começar dentro de uma arena: se o jogador
@@ -592,6 +652,8 @@ export class Game {
 
     $('title-screen').classList.add('hidden');
     $('over-screen').classList.add('hidden');
+    // sentinela do botão voltar do Android: o primeiro "voltar" vira pausa
+    try { history.pushState(null, ''); } catch {}
     this._abrirOpcoes(false);
     this.keys.fechar();
     this.hud.show(true);
@@ -641,9 +703,39 @@ export class Game {
    * do jeito que estava; quem quiser retomar usa o botão "voltar ao jogo" (ou
    * ESC). Só `start()` reinicia de verdade.
    */
+  /** PAUSA: congela o mundo e abre o painel único (solo, DM e BR). */
+  pausar() {
+    if (this.state !== 'playing') return;
+    this.state = 'paused';
+    this.input.enabled = false;
+    this.input.releaseLock();
+    this.pausa.mostrar();
+  }
+
+  /** RETOMAR de onde parou. */
+  retomar() {
+    if (this.state !== 'paused') return;
+    this.state = 'playing';
+    this.pausa.esconder();
+    this.input.enabled = true;
+    if (!this.toque) this.input.requestLock();
+    this.music.tocar(this.emFase ? 'boss' : 'saopaulo');
+  }
+
+  /** Devolve a pausa ao comando do modo solo (após o MP sair). */
+  _ligarPausaSolo() {
+    this.pausa.ligar({
+      retomar: () => this.retomar(),
+      opcoes: () => this._abrirOpcoes(true),
+      controles: () => this.keys.abrir(),
+      sair: () => { this.pausa.esconder(); this.hasGame = false; this.toTitle(); },
+    });
+  }
+
   toTitle() {
     this.music.tocar('abertura');
     this.state = 'title';
+    this.camera.setAds(false);            // [FPS] ao sair para o menu, solta a mira
     this.input.enabled = false;
     this.input.releaseLock();
     this.hud.show(false);
@@ -668,6 +760,7 @@ export class Game {
     this.state = 'playing';
     this.input.enabled = true;
     if (!this.toque) this.input.requestLock();
+    try { history.pushState(null, ''); } catch {}
     /*
      * Devolve a trilha de onde o jogador parou. Sem isto ele voltava
      * para o meio de uma luta de chefão ouvindo a música de abertura,
@@ -738,6 +831,13 @@ export class Game {
     this.camera.yaw = 0;
     this.camera.pitch = -0.2;
     this.camera.wantDistance = CAMERA.defaultZoom;
+
+    // [debug] campo de tiro interno (?range=1 na URL)
+    if (location.port === '8085' || /[?&]range=1/.test(location.search) || /#range/.test(location.hash)) {
+      this.range = new CampoTiro(this.gfx.scene);
+      this.range.posicionar(spawn.x, spawn.z, this.camera.yaw);
+      this._rangeAutoT = 0;
+    }
 
     // [13] reiniciar não pode desfazer "sempre dia" / "sempre noite"
     if (this.sky.cycleFrozen) this.sky.setCycleMode(this.sky.cycleMode);
@@ -929,6 +1029,11 @@ export class Game {
     this.city.setNight(n);
     this.props.update(0, n, this._focus);
     this.cars.setNight(n);
+
+    // [DIA-NOITE] no multiplayer o host repassa a escolha ao servidor,
+    // senao o snap do host sobrescreve e o modo nunca fixa (o listener do
+    // multiplayer.js decide se envia: so envia se estiver conectado e for host)
+    window.dispatchEvent(new CustomEvent('mp-cycle', { detail: mode }));
   }
 
   /** Tecla N: percorre ciclo -> sempre dia -> sempre noite. */
@@ -1133,12 +1238,43 @@ export class Game {
     if (this.mode === 'heli') { this._fireMissile(); return; }  // [63]
 
     if (!this.bullets.canFire) return;
-    const { origin, direction } = this.camera.aimRay(this._aimOrigin, this._aimDir);
+    const noHeli = this.mode === 'heli';
+    const { origin, direction } = this.camera.aimRay(this._aimOrigin, this._aimDir, 0, 0);
+
+    // [AIM ASSIST] inimigo perto da linha de mira: o tiro desvia para o centro
+    // dele (cone ~5,7°). Não rouba tiro errado longe — só tira o peso de
+    // acertar um corpo fino em movimento.
+    const foesS = this.player.inimigos;
+    if (foesS && foesS.length) {
+      const alvosS = [];
+      for (const f of foesS) {
+        if (!f.vivo) continue;
+        const pS = f.root.position;
+        alvosS.push({ x: pS.x, y: pS.y + (f.alturaAlvo || 1), z: pS.z });
+      }
+      const aS = aimAssist(origin.x, origin.y, origin.z, direction.x, direction.y, direction.z, alvosS, 120, 0.20);
+      if (aS) direction.set(aS.x, aS.y, aS.z);
+    }
+
+    /*
+     * [FPS] Espalhamento da bala. Sem mirar (cintura) o tiro sai com uma
+     * folga aleatória; mirando (ADS) o zoom "fixa a mira" e a bala vai
+     * quase reta para o ponto do centro. É o que dá valor ao zoom: sem
+     * ele, mirar não mudaria nada além da estética.
+     */
+    const spread = this.camera.isAds ? CAMERA.spreadAds : CAMERA.spreadHip;
+    if (spread > 0) {
+      direction.x += (Math.random() - 0.5) * 2 * spread;
+      direction.y += (Math.random() - 0.5) * 2 * spread;
+      direction.z += (Math.random() - 0.5) * 2 * spread;
+      direction.normalize();
+    }
+
     if (this.bullets.fire(origin, direction)) {               // [37][38][41]
+      if (this.range) this.range.marcarImpacto(origin, direction, this.col, this.camera.cam);
       this.hud.recoil();
-      this.camera.addShake(0.16);
-      this.audio.tiro();
-      if (this.viewmodel) this.viewmodel.darCoice();
+      // [FIXO] sem coice de camera: a mira fica 100% parada ao atirar (raycast do centro)
+      this.audio.tiro();   // [FIX] apenas o SOM do tiro - sem efeitos visuais da arma (coice)
       this._companheiroAtaca();
     }
   }
@@ -1201,18 +1337,67 @@ export class Game {
    */
   _fireMissile() {
     if (!this.missiles.canFire) return;
-    const { origin, direction } = this.camera.aimRay(this._aimOrigin, this._aimDir);
+    // [MIRA HELI = MP] raio do CENTRO exato da tela (NDC 0,0) — o multiplayer
+    // usa unproject(0,0,0.5); antes (0.24,0.2) fazia o míssil sair deslocado
+    // do retículo (direita e acima) e errar onde a mira apontava
+    const { origin, direction } = this.camera.aimRay(this._aimOrigin, this._aimDir, 0, 0);
 
-    const hit = this.bullets._trace(origin, direction, 500);
-    const alvo = hit
-      ? hit.point.clone()
-      : origin.clone().addScaledVector(direction, 500);
+    // [AIM ASSIST] igual ao MP: magnetismo sutil (cone ~2,9°, alcance 140 m)
+    // — o tiro sai reto onde o retículo aponta, sem desviar para o lado.
+    const alvosM = [];
+    const foesM = this.player.inimigos;
+    if (foesM && foesM.length) {
+      for (const f of foesM) {
+        if (!f.vivo) continue;
+        const pM = f.root.position;
+        alvosM.push({ x: pM.x, y: pM.y + (f.alturaAlvo || 1), z: pM.z });
+      }
+    }
+    if (this.stage && this.stage.foes && this.stage.foes.length) {
+      for (const f of this.stage.foes) {
+        if (!f.vivo) continue;
+        const pM = f.root.position;
+        alvosM.push({ x: pM.x, y: pM.y + (f.alturaAlvo || 1), z: pM.z });
+      }
+    }
+    if (this.peds && this.peds.peds) {
+      for (const p of this.peds.peds) {
+        if (!p.alive) continue;
+        const pP = p.human.root.position;
+        alvosM.push({ x: pP.x, y: pP.y + 0.9, z: pP.z });
+      }
+    }
+    if (this.cars && this.cars.cars) {
+      for (const c of this.cars.cars) {
+        if (!c.alive) continue;
+        const pC = c.root.position;
+        alvosM.push({ x: pC.x, y: pC.y + 0.9, z: pC.z });
+      }
+    }
+    if (alvosM.length) {
+      const aM = aimAssist(origin.x, origin.y, origin.z, direction.x, direction.y, direction.z, alvosM, 140, 0.05);
+      if (aM) direction.set(aM.x, aM.y, aM.z);
+    }
+    // [MIRA] O projetil nasce a partir da CAMERA, na linha do reticulo do player —
+    // aparece exatamente no ponto da mira na tela; com a camera de ombro do heli
+    // essa linha passa ao lado da fuselagem, nunca atras dela.
+    let dist = 6;
+    const ox = origin.x, oy = origin.y, oz = origin.z;
+    for (const a of alvosM) {
+      const lx = a.x - ox, ly = a.y - oy, lz = a.z - oz;
+      const d = Math.hypot(lx, ly, lz);
+      if (d < 0.01) continue;
+      const dot = (lx * direction.x + ly * direction.y + lz * direction.z) / d;
+      if (dot > 0.95 && d < dist) dist = Math.max(d - 1.2, 0.8);
+    }
+    const originM = this._tmpV.set(ox + direction.x * dist, oy + direction.y * dist, oz + direction.z * dist);
 
-    this._missileSide = -(this._missileSide || 1);
-    const boca = this.heli.hardpoint(this._missileSide, this._tmpV);
-    const rumo = alvo.sub(boca).normalize();
-
-    if (this.missiles.fire(boca, rumo)) {
+    // [MÍSSIL = PISTOLA] o míssil sai da MIRA (mesma origem/direção da bala) e
+    // segue RETO na linha de mira até o primeiro alvo — sem teleguiado, sem
+    // curva, sem hardpoint lateral. (alvo=null → o MissileSystem não persegue
+    // ponto nenhum: só acelera reto e detona no impacto, exatamente como a
+    // bala da pistola viaja e acerta o primeiro obstáculo/alvo na mira.)
+    if (this.missiles.fire(originM, direction, null)) {
       this.hud.recoil();
       this.camera.addShake(0.22);
       this.audio.missil();
@@ -1223,7 +1408,7 @@ export class Game {
   _killPed(ped, byBullet) {
     if (!ped || !ped.alive) return;
     const p = ped.human.root.position;
-    this.fx.explode(new THREE.Vector3(p.x, p.y + 0.9, p.z), 1.0);
+    this.fx.explode(new THREE.Vector3(p.x, p.y + 0.9, p.z), 0.5);
     this.audio.explosao(1);
     this.camera.addShake(byBullet ? 0.3 : 0.5);
     this.peds.remove(ped, true);                              // [29] repõe outra
@@ -1237,7 +1422,7 @@ export class Game {
     if (!car || !car.alive) return;
     if (car === this.playerCar) return;
     const p = car.root.position;
-    this.fx.explode(new THREE.Vector3(p.x, p.y + 0.8, p.z), 1.9);
+    this.fx.explode(new THREE.Vector3(p.x, p.y + 0.8, p.z), 0.95);
     this.audio.explosao(2);
     this.camera.addShake(byBullet ? 0.4 : 0.7);
     this.cars.remove(car, true);                              // [29] repõe outro
@@ -1399,8 +1584,7 @@ export class Game {
     if (this.teleguiado.disparar(origin, direction, this.alvoTravado)) {
       this.audio.missil();
       this.hud.recoil();
-      this.camera.addShake(0.3);
-      if (this.viewmodel) this.viewmodel.darCoice();
+      this.camera.addRecoil();   // [FIX] sem darCoice (efeito visual da arma) - apenas o som do missil
     }
   }
 
@@ -1695,7 +1879,7 @@ export class Game {
     this.camera.addShake(0.8);
 
     if (this.hearts <= 0) {                                   // [35]
-      this.fx.explode(this.player.position.clone().setY(this.player.position.y + 0.9), 1.4);
+      this.fx.explode(this.player.position.clone().setY(this.player.position.y + 0.9), 0.7);
       this.player.setVisible(false);
       this.gameOver('Você ficou sem corações. ' + reason);
     } else {
@@ -1706,7 +1890,49 @@ export class Game {
   // ==================================================================
   //  loop
   // ==================================================================
+  /**
+   * [perf] Duas alavancas invisiveis para segurar 60 FPS SEM perder qualidade:
+   *
+   * 1. SOMBRA DIFERIDA: o passe de sombra e o custo mais pesado da cena
+   *    (milhares de casters no frustum da luz). Com `autoUpdate = false`,
+   *    so re-renderizamos a cada 2 frames — a sombra fica 1 frame atrasada
+   *    (invisivel) e o custo cai pela metade.
+   *
+   * 2. RESOLUCAO DINAMICA: media exponencial do frame time. Passou de 60 FPS,
+   *    reduz o renderScale; com folga consistente, devolve ao teto do perfil.
+   *    Qualidade maxima sempre que o hardware aguenta, sem tocar em NENHUMA
+   *    logica de jogo.
+   */
+  _adaptative() {
+    // ---- sombra a cada 2 frames (1/2 do custo do passe)
+    this._shadowTick = (this._shadowTick || 0) + 1;
+    const p = PRESETS[this.presetIndex] || PRESETS[DEFAULT_PRESET];
+    if (this._shadowTick % (p.shadowTickEvery || 2) === 0) this.gfx.requestShadow();
+
+    // ---- resolucao dinamica com histerese (nao fica oscilando)
+    const ema = this._ema ? this._ema * 0.88 + this._frameMs * 0.12 : this._frameMs;
+    this._ema = ema;
+    if (ema > (p.targetMsHigh || 15.5)) {
+      // passou do alvo de 60 FPS: reduz a escala e espera estabilizar
+      this.gfx.setDynamicScale(this.gfx.dynamicScale * 0.9);
+      this._boostT = 0;
+    } else if (ema < (p.targetMsLow || 13.5)) {
+      // com folga consistente, devolve resolucao aos poucos
+      this._boostT = (this._boostT || 0) + this._frameMs / 1000;
+      if (this._boostT > 0.9) {
+        this._boostT = 0;
+        this.gfx.setDynamicScale(this.gfx.dynamicScale * 1.05);
+      }
+    }
+  }
+
   update(dt) {
+    // [perf] mede o frame ANTERIOR completo (update + render do ciclo passado)
+    const now = performance.now();
+    if (this._lastT) this._frameMs = Math.min(100, now - this._lastT);
+    this._lastT = now;
+    if (this._frameMs > 0) this._adaptative();
+
     this.hud.tickFPS(dt);
     if (this.state === 'playing') this._updatePlaying(dt);
     else if (this.state === 'title') this._updateTitle(dt);
@@ -1783,14 +2009,16 @@ export class Game {
     const night = this.sky.nightFactor;
     this.sky.setPaused(false);
     this.sky.update(dt, this._focus);
+    this.player.human.setNight(night);
+    this.peds.setNight(night);
     this.city.setNight(night);
     this.props.update(dt, night, this._focus);
     this.landmarks.update(dt, night);
     this.terrain.update(dt);
     this.traffic.update(dt, night);
-    this.peds.update(dt);
+    this.peds.update(dt, this._focus.x, this._focus.z);
     this.cars.setNight(night);
-    this.cars.update(dt, null);
+    this.cars.update(dt, this._focus);
     this.heli.update(dt, this._heliInput(true), night);
     this.fx.update(dt);
   }
@@ -1815,19 +2043,9 @@ export class Game {
       const m = this.input.consumeMouse();
       this.camera.look(m.dx, m.dy);                           // [11]
       this.camera.zoom(this.input.consumeWheel());            // [12]
-      // o clique que captura o ponteiro não deve virar tiro
-      const clicked = this.input.consumeClick();
-      if (clicked && this.input.locked) this._shoot();        // [27]
-      /*
-       * No toque, o botão de atirar é SEGURADO, não tocado uma vez por
-       * disparo: metralhar a dedadas não é jogo, é tendinite. A cadência
-       * continua sendo a da arma — `_shoot` respeita o `canFire`.
-       */
-      if (this.input.toque.atirar) this._shoot();
     } else {
       this.input.consumeMouse();
       this.input.consumeWheel();
-      this.input.consumeClick();
     }
 
     const blocked = this.phone.open || emCena;
@@ -1835,28 +2053,53 @@ export class Game {
     // ------------------------------------------------ jogador / veículos
     if (this.mode === 'foot') {
       const inp = blocked ? EMPTY_INPUT : this.input;
+      // [FPS] o Bob SEMPRE olha para onde a mira aponta: a cabeça sobe,
+      // desce e gira acompanhando o foco (câmera + desvio da mira + coice)
+      this.player.human.lookPitch = this.camera.aimPitch;
+      this.player.human.lookYaw = this.camera.aimYaw;
       if (this.god) this.player.updateFly(dt, inp, this.camera.yaw);
-      else this.player.update(dt, inp, this.camera.yaw);
+      else this.player.update(dt, inp, this.camera.viewYaw);
       this.player.focusPoint(this._focus);
+      /*
+       * [27][FPS] MIRA: no PC o botao DIREITO, segurado, ergue a pistola e
+       * fecha a mira 2x (FOV pela metade) — padrao de jogos; o botao
+       * ESQUERDO atira sem zoom (tiro de cintura). No celular nada muda:
+       * segurar ATIRAR continua com o zoom leve de COD Mobile. Soltou,
+       * tudo volta ao normal sozinho.
+       */
+      const aimando = !blocked && (this.input.mouseDown || this.input.mouseRightDown || this.input.toque.atirar || this.input.segurando('atirar'));
+      this.player.setAiming(aimando);
+      this.camera.setAds(aimando, this.input.mouseRightDown ? CAMERA.adsFovPc : CAMERA.adsFov);   // [PC] direito = mira 2x; esquerdo/mobile = tiro ADS leve
     } else if (this.mode === 'cable') {
       // [54] o corpo olha para onde a câmera aponta; a POSIÇÃO é acertada
       // depois que a cabine anda, mais abaixo
       this.player.yaw = dampAngle(this.player.yaw, this.camera.yaw + Math.PI, PLAYER.turnSmooth, dt);
+      this.player.human.lookPitch = 0;
+      this.player.human.lookYaw = 0;
       this.player.human.update(dt, 0);
+      this.player.setAiming(false);
+      this.camera.setAds(false);
     } else if (this.mode === 'car') {
       this._updatePlayerCar(dt, blocked);
       const p = this.playerCar.root.position;
       this._focus.set(p.x, p.y + 1.5, p.z);
+      this.player.human.lookPitch = 0;
+      this.player.human.lookYaw = 0;
       this.player.human.update(dt, 0);
+      this.player.setAiming(false);
+      this.camera.setAds(false);
     } else {
       this._updateHeliControls(dt, blocked);
       const p = this.heli.root.position;
       this._focus.set(p.x, p.y + 1.2, p.z);
+      this.camera.setAds(false);
     }
 
     // ------------------------------------------------ mundo
     const night = this.sky.nightFactor;
     this.sky.update(dt, this._focus);                         // [13]
+    this.player.human.setNight(night);
+    this.peds.setNight(night);
     this.city.setNight(night);                                // [20] janelas acesas
     this.props.update(dt, night, this._focus);                // [22]
     this.landmarks.update(dt, night);                         // [53][54]
@@ -1872,12 +2115,13 @@ export class Game {
       this.player.teleport(this._tmpV.x, this._tmpV.z, this._tmpV.y);
       this.player.human.root.rotation.y = this.player.yaw;
       this.player.focusPoint(this._focus);
+      this.player.setAiming(false);   // [27] na cabine do teleférico o Bob não ergue a pistola
     }
     this.terrain.update(dt);
     this.traffic.update(dt, night);                           // [4]
-    this.peds.update(dt);                                     // [2]
+    this.peds.update(dt, this._focus.x, this._focus.z);                                     // [2]
     this.cars.setNight(night);
-    this.cars.update(dt, this.playerCar);                     // [3]
+    this.cars.update(dt, this._focus);                     // [3]
     this.heli.update(dt, this._heliInput(blocked), night);    // [43]
 
     this.bullets.update(dt);                                  // [38][41]
@@ -1902,6 +2146,31 @@ export class Game {
 
     // ------------------------------------------------ câmera
     this.camera.update(dt, this._focus, this._interiorTransform());
+
+    // [FIXO-tiro] o disparo sai DEPOIS da câmera final do frame (ADS/FOV já
+    // aplicados). Antes usava a câmera do frame anterior e a bala saía fora
+    // do eixo da mira (o alvo "escapava" ao apertar o disparo).
+    if (!this.phone.open && !emCena) {
+      // o clique que captura o ponteiro não deve virar tiro
+      this.input.consumeClick();
+      // [27][PC-auto] botão esquerdo SEGURADO = tiro contínuo (cadência da arma),
+      // igual ao botão ATIRAR no mobile — o canFire limita a velocidade.
+      if (this.input.mouseDown && this.input.locked) this._shoot();
+      /*
+       * No toque, o botão de atirar é SEGURADO, não tocado uma vez por
+       * disparo: metralhar a dedadas não é jogo, é tendinite. A cadência
+       * continua sendo a da arma — _shoot respeita o canFire.
+       */
+      if (this.input.toque.atirar) this._shoot();
+    } else {
+      this.input.consumeClick();
+    }
+
+    // [debug] campo de tiro (?range=1): marcador verde = centro óptico da tela;
+    // modo AUTO atira sozinho a cada 0,4 s para calibrar sem precisar interagir.
+    if (this.range) {
+      this.range.update(this.camera.cam, this.col, 'SOLO ' + this.mode + (this.camera.isAds ? ' ADS' : ''));
+    }
 
     // ------------------------------------------------ HUD
     this._updateHUD(dt);
@@ -1987,20 +2256,9 @@ export class Game {
     }
     car.speed = clamp(car.speed, -CAR.reverseSpeed, CAR.maxSpeed);   // [28] até 120 km/h
 
-    /*
-     * [11] Direção pelo mouse: o carro busca o rumo para onde a câmera aponta.
-     * A/D continuam valendo como ajuste fino.
-     *
-     * Só vale na câmera externa. Na visão interna o mouse serve para olhar
-     * dentro da cabine — se ele também esterçasse, olhar para o lado viraria
-     * o carro e o carro viraria o olhar, num laço sem fim.
-     */
-    const externa = this.camera.mode !== 'car-in';
-    let steer = -ax.strafe;                            // manual: D vira à direita
-    if (externa) {
-      const alvo = this.camera.yaw + Math.PI;          // rumo = frente da câmera
-      steer += clamp(angleDelta(car.yaw, alvo) * 1.8, -1, 1);
-    }
+    // [FPS] O mouse é só a cabeça: a direção do carro vem SÓ do volante
+    // (A/D). Olhar ao redor não esterça o carro — nem na câmera externa.
+    let steer = -ax.strafe + ((this.input.toque.girarDir || 0) - (this.input.toque.girarEsq || 0));  // [carro] ◀ ▶ também viram
     steer = clamp(steer, -1, 1);
 
     // esterço proporcional à velocidade (parado não vira)
@@ -2202,7 +2460,18 @@ export class Game {
     if (!this.phone.open) this._updatePrompt();
 
     // ---- mira só faz sentido quando dá para atirar
-    this.hud.setCrosshairVisible(true);
+    this.hud.setCrosshairVisible(this.camera.ads < 0.6);   // [CODM-FPP] retícula 2D some na 1a pessoa (a mira é a arma 3D)
+    // [FPS] com o zoom de mira fechado, a mira desliza para o centro
+    this.hud.setAds(this.camera.isAds);
+    // [CODM-ADS] garante a classe .center no crosshair ao entrar em ADS
+    // (no multiplayer isso já era feito via match.js:796)
+    this.hud.setCrosshairCenter(this.camera.isAds);
+    // [CODM-FPP] o corpo some quando a câmera chega aos olhos; a arma 3D assume
+    this.player.human.root.visible = this.camera.ads < 0.45;
+    if (this.viewmodel) {
+      this.viewmodel.visible = this.camera.ads > 0.2;   // [CODM-FIX] aparece cedo, no canto (repouso), e SOBE de baixo — sem pop no centro
+      if (this.viewmodel.visible) { this.viewmodel.setAds(true); this.viewmodel.setTransicao(this.camera.ads); }
+    }
     this._updateAimFeedback();
   }
 
@@ -2263,6 +2532,9 @@ export class Game {
 
   /** [37] Realça a mira quando ela está sobre uma pessoa ou carro. */
   _updateAimFeedback() {
+    // [perf] metade dos traces: o realce da mira 1 frame atrasado e invisivel
+    this._aimTick = (this._aimTick || 0) + 1;
+    if (this._aimTick & 1) return;
     const { origin, direction } = this.camera.aimRay(this._aimOrigin, this._aimDir);
     const hit = this.bullets._trace(origin, direction, 220);
     this.hud.setOnTarget(!!hit && (hit.kind === 'ped' || hit.kind === 'car'));

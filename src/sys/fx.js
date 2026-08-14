@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { puffTexture } from '../gfx/textures.js';
 
 const MAX_PARTICLES = 1600;
@@ -11,6 +11,12 @@ const MAX_RINGS = 6;
  * [24][26][35] Explosões: bola de fogo, fumaça, estilhaços, onda de choque e
  * um clarão de luz real. Tudo em pools — nenhuma alocação durante o jogo.
  */
+const _M = new THREE.Matrix4(); // [perf F3-4] temps reutilizados (zero alocacao por frame)
+const _Q = new THREE.Quaternion();
+const _E = new THREE.Euler();
+const _S = new THREE.Vector3();
+const _OFF = new THREE.Matrix4().makeScale(0.0001, 0.0001, 0.0001);
+
 export class FX {
   constructor(scene) {
     this.scene = scene;
@@ -46,7 +52,8 @@ export class FX {
           vColor = aColor;
           vAlpha = aAlpha;
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = aSize * (420.0 / max(0.001, -mv.z));
+          float distZ = -mv.z;
+          gl_PointSize = (distZ > 0.001) ? aSize * (420.0 / distZ) : 0.0;
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
@@ -276,17 +283,22 @@ export class FX {
     l.light.position.set(pos.x, pos.y + 1.2, pos.z);
   }
 
-  /** Faíscas de impacto de bala. [37] */
-  impact(pos, normal, color = null) {
+  /**
+   * Faíscas de impacto de bala. [37]
+   * `esc` (0..1) escala quantidade/vida/tamanho: o brilho do cano da arma
+   * usa 0.1 — 90% menos partículas e menos lag no tiro.
+   */
+  impact(pos, normal, color = null, esc = 1) {
     const c = color || { r: 3.0, g: 2.0, b: 0.8 };
-    for (let i = 0; i < 9; i++) {
+    const n = Math.max(1, Math.round(9 * esc));
+    for (let i = 0; i < n; i++) {
       const sp = 3 + Math.random() * 9;
       this._emit(pos.x, pos.y, pos.z, {
         vx: normal.x * sp + (Math.random() - 0.5) * 5,
         vy: normal.y * sp + (Math.random() - 0.5) * 5 + 1,
         vz: normal.z * sp + (Math.random() - 0.5) * 5,
-        life: 0.18 + Math.random() * 0.25,
-        size: 0.34,
+        life: (0.18 + Math.random() * 0.25) * esc,
+        size: 0.34 * Math.max(esc, 0.5),
         drag: 3.5,
         gravity: -12,
         r: c.r, g: c.g, b: c.b,
@@ -340,11 +352,7 @@ export class FX {
     }
 
     // ---- estilhaços
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const e = new THREE.Euler();
-    const s = new THREE.Vector3();
-    const off = new THREE.Matrix4().makeScale(0.0001, 0.0001, 0.0001);
+    const m = _M, q = _Q, e = _E, s = _S, off = _OFF; // [perf F3-4] temps do modulo
     let anyD = false;
     for (let i = 0; i < MAX_DEBRIS; i++) {
       const d = this.debris[i];

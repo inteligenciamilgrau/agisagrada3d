@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { CURB_H, BLOCK_INNER } from '../config.js';
 import { voxMaterial } from '../ent/voxel.js';
 
@@ -97,16 +97,22 @@ function galpao(scene, col, spec) {
    * 5,2 m, bem acima da cabeça, e um colisor ali barraria quem passa.
    */
   const top = PISO + alt;
+  // [FIX-prédios] fechar a PORTA INVISÍVEL: o vão de PORTA_W ficava sem
+  // colisão nenhuma — os bots (e o jogador) entravam por ali e ficavam
+  // presos dentro do galpão. Agora uma parede de colisão cobre o vão.
+  const paredes = [];
+  const pv = (b) => { paredes.push(b); return b; };
   for (const s of [-1, 1]) {
-    col.addBox(cx + s * (PORTA_W / 2 + ladoW / 2), cz + hp, ladoW / 2, E, top, 'img', PISO - 1);
+    pv(col.addBox(cx + s * (PORTA_W / 2 + ladoW / 2), cz + hp, ladoW / 2, E, top, 'img', PISO - 1));
   }
-  col.addBox(cx, cz - hp, hl, E, top, 'img', PISO - 1);
-  col.addBox(cx - hl, cz, E, hp, top, 'img', PISO - 1);
-  col.addBox(cx + hl, cz, E, hp, top, 'img', PISO - 1);
+  pv(col.addBox(cx, cz + hp, PORTA_W / 2 + 0.3, E, top, 'img', PISO - 1));
+  pv(col.addBox(cx, cz - hp, hl, E, top, 'img', PISO - 1));
+  pv(col.addBox(cx - hl, cz, E, hp, top, 'img', PISO - 1));
+  pv(col.addBox(cx + hl, cz, E, hp, top, 'img', PISO - 1));
   // piso interno caminhável
   col.addPlatform(cx - hl, cz - hp, cx + hl, cz + hp, () => PISO);
 
-  return { g, caixa, hl, hp, alt, nome };
+  return { g, caixa, hl, hp, alt, nome, paredes };
 }
 
 /** Recheio do Labs IMG: gambiarra high-tech, como manda o roteiro. */
@@ -177,6 +183,9 @@ export class IMGBuildings {
     this.scene = scene;
     this.col = col;
     this.pontos = {};
+    this._grupos = [];       // groups dos galpões (p/ esconder no MP)
+    this._paredes = [];      // caixas de colisão das paredes (p/ remover no MP)
+    this._mpEscondido = false;
   }
 
   build(city) {
@@ -196,6 +205,8 @@ export class IMGBuildings {
         corParede: spec.corParede, corTeto: spec.corTeto,
       });
       spec.recheio(b, cx, cz);
+      this._grupos.push(b.g);
+      for (const pv of b.paredes) this._paredes.push(pv);
 
       /*
        * O portal fica NO HALL, três metros depois da porta: perto o
@@ -205,5 +216,21 @@ export class IMGBuildings {
       this.pontos[spec.chave] = { x: cx, y: PISO, z: cz + prof / 2 - 3.5 };
     }
     return this.pontos;
+  }
+
+  // [MP] esconde os galpões IMG (Labs/Estúdio) e tira a colisão das paredes:
+  // o centro do mapa fica livre p/ o spawn do multiplayer. Reversível.
+  esconderParaMp(col) {
+    if (this._mpEscondido) return;
+    this._mpEscondido = true;
+    for (const g of this._grupos) g.visible = false;
+    for (const b of this._paredes) col.removeBox(b);
+  }
+
+  restaurarDoMp(col) {
+    if (!this._mpEscondido) return;
+    this._mpEscondido = false;
+    for (const g of this._grupos) g.visible = true;
+    for (const b of this._paredes) col.restoreBox(b);
   }
 }

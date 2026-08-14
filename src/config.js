@@ -4,6 +4,14 @@
  */
 
 // ---------------------------------------------------------------- malha urbana
+// ------------------------------------------------------------ multiplayer
+// URL do servidor MP. O site fica no GitHub Pages (estatico, sem WebSocket): o
+// cliente precisa do endereco real do servidor, hospedado no Render.
+export const NET = {
+  wsUrl: 'wss://tiroteio.duckdns.org/ws',
+};
+
+
 export const GRID = 8;                 // linhas de cruzamento por eixo (8x8 = 64 nós)
 export const CELL = 64;                // distância entre cruzamentos
 export const HALF = ((GRID - 1) * CELL) / 2;   // 224 -> cidade vai de -224 a +224
@@ -49,8 +57,8 @@ export const PLAYER = {
   walkSpeed: 6.4,
   runSpeed: 14.5,              // [30] Shift
   accel: 58,                   // acompanha: sem isso a arrancada fica mole
-  jumpSpeed: 7.4,              // [36] espaço
-  gravity: 26,
+  jumpSpeed: 10,              // [36] espaço
+  gravity: 28,
   turnSmooth: 14,
   /*
    * [33] Corações.
@@ -88,10 +96,29 @@ export const CAMERA = {
   far: 2600,
   minZoom: 2.6,                // [12] scroll do mouse
   maxZoom: 16,
-  defaultZoom: 6.2,
+  /**
+   * [Ombro] Zoom padrão a pé — bem perto (3.6): o Bob preenche a tela e o
+   * braço direito com a pistola aparece no canto, estilo COD Mobile. O
+   * scroll do mouse ainda afasta até `maxZoom` quando o jogador quiser.
+   */
+  defaultZoom: 3.6,
   carZoom: 11,
   heliZoom: 18,
   cableZoom: 12,               // [54] dentro do bondinho
+  /**
+   * [Ombro] Over-the-shoulder estilo COD Mobile: quanto a câmera desloca
+   * para o lado DIREITO do Bob (o lado da pistola) no modo a pé. É o que
+   * põe o braço e a mão segurando a arma visíveis no canto da tela — sem
+   * isto, o braço direito fica escondido atrás do corpo.
+   */
+  shoulderX: 1.8,
+  heliShoulderX: 3.0,          // [heli] camera de ombro: heli sai do centro da tela, mira livre
+  /**
+   * [Ombro] Quanto o CORPO do Bob gira para a esquerda em relação à
+   * câmera (rad) no modo a pé. Expõe o ombro direito e a pistola para a
+   * câmera deslocada, deixando o braço em perfil em vez de de costas.
+   */
+  bodyTurn: 0.30,
   /**
    * [11][14] Limites da inclinação da câmera, em radianos.
    * pitchMax 1.35 ≈ 77° para cima: dá para ver o topo dos prédios, o Cristo
@@ -114,7 +141,7 @@ export const CAMERA = {
    */
   pitchMaxInterior: 1.05,
   pitchMinInterior: -0.9,
-  sensitivity: 0.0022,         // [11] mouse
+  sensitivity: 0.0045,         // [11] mouse (~2x mais agil, estilo FPS)
   height: 1.55,
   lag: 12,
   /**
@@ -123,6 +150,35 @@ export const CAMERA = {
    * deixa o caminho à frente livre. 0.20 ≈ 11° de inclinação.
    */
   heliFrameLift: 0.20,
+
+  /**
+   * [FPS] Zoom de mira (ADS), estilo COD Mobile.
+   *
+   * Segurar o tiro fecha a câmera: o FOV aperta (fov -> adsFov) e, a pé,
+   * a distância de terceira pessoa encolhe até `adsZoom`. A mira (que no
+   * jogo fica a 62% da tela) desliza para o centro — é o "fixar a mira" —
+   * e o espalhamento da bala cai para `spreadAds`: mirou, atira reto.
+   *
+   * [Ombro] Ficou mais curto que o defaultZoom novo (3.6): mirar ainda
+   * aproxima de verdade, e o braço com a pistola domina o canto da tela.
+   */
+  adsFov: 45,             // [ADS-ZOOM] zoom real: FOV 62 -> 45 no celular (estilo COD Mobile)
+  adsFovPc: 31,             // [PC] mira 2x no botão direito (FOV pela metade)
+  adsSpeed: 9,
+  adsEyeHeight: 0.22,           // [CODM-FPP] olhos: focus(1.48m) + 0.22 = 1.70m
+  adsEyeForward: 0.18,          // [CODM-FPP] camera um pouco a frente do centro do corpo (olhos)
+  adsDolly: 0,              // [CODM-FPP] a translacao virou o blend 1a pessoa (adsEyeHeight/adsEyeForward) — campo desativado
+  /**
+   * [FPS] SEM coice de câmera: ao atirar a mira NUNCA sai do lugar
+   * (sniper-friendly). O recuo ficou só visual — a arma sobe no
+   * viewmodel e o hitmarker confirma o acerto.
+   */
+  recoilPitch: 0,
+  recoilYaw: 0,
+  recoilRecover: 5.0,
+  /** [FPS] Espalhamento da bala: sem mirar (cintura) vs mirando (ADS). */
+  spreadHip: 0,   // [CALIBRACAO] tiro da cintura sai reto onde o crosshair aponta (sem espalhamento)
+  spreadAds: 0,
 };
 
 // ---------------------------------------------------------------- veículos
@@ -150,6 +206,7 @@ export const HELI = {
   drag: 0.62,
   rotorSpeed: 26,
   exitMaxHeight: 3.2,          // [49] só sai perto do chão
+  enterRange: 6.5,             // [MP] raio para entrar no aparelho (igual ao servidor)
   /**
    * [46] Altura do centro do helicóptero quando ele está POUSADO.
    *
@@ -212,8 +269,7 @@ export const DEFAULT_POPULATION = 2;
  * `brasil.js` já importa `terrain.js`: pôr no outro sentido faria ciclo.
  */
 export const PLATOS = [
-  { id: 'pelourinho', x: -121.6, z: -435.0, rot: -0.25, hx: 62, hz: 34, fade: 26 },
-  { id: 'museu', x: -424.3, z: 140.8, rot: 0.42, hx: 58, hz: 52, fade: 28 },
+  // [CENARIO-LIMPO] platos do museu/pelourinho removidos junto com as construcoes
 ];
 
 // ---------------------------------------------------------------- [54] bondinho
@@ -255,7 +311,7 @@ export const GAME = {
   killTimeBonus: 5,            // [32]
   bulletSpeed: 145,            // [38]
   bulletLife: 3.0,
-  bulletBounces: 3,            // [41] ricochete
+  bulletBounces: 0,            // [41] ricochete OFF (bala morre no 1º impacto - mais leve)
   fireCooldown: 0.16,          // [27]
   pickupRange: 3.4,            // [5][6]
   airPickupRange: 26,          // [51] pega/entrega voando alto
@@ -273,11 +329,12 @@ export const GAME = {
  * 40 m/s é difícil, e a graça é o estrago, não a precisão.
  */
 export const MISSILE = {
-  speed: 55,                   // velocidade de saída do trilho
-  accel: 70,                   // aceleração do motor
-  maxSpeed: 165,
+  speed: 55,                   // m/s CONSTANTE — idêntico ao MP (MISSIL.speed do servidor)
+  accel: 0,                    // sem aceleração: voa reto a 55 m/s o voo todo
+  maxSpeed: 55,                // (era 165) igual ao servidor: míssil do MP não acelera
+  turn: 4.0,                // [missil] guia para o ponto exato da mira (raio de giro seguro a 165 m/s)
   life: 5.0,
-  cooldown: 0.7,               // mais lento que a pistola [27]
+  cooldown: 0.5,               // míssil do heli mais rápido [27]
   blastPed: 9.5,               // raio que pega pedestres
   blastCar: 8.5,               // raio que pega carros
   blastFx: 3.2,                // escala da explosão
@@ -286,7 +343,7 @@ export const MISSILE = {
 
 // ---------------------------------------------------------------- ciclo dia/noite [13]
 export const DAY = {
-  duration: 210,               // segundos por dia completo
+  duration: 135.5,   // 55% mais rapido (era 210s)               // segundos por dia completo
   startHour: 8.5,
   sunriseHour: 6,
   sunsetHour: 18.5,
@@ -322,7 +379,7 @@ export const QUALITY = {
    * (janelas acesas, postes, faróis, semáforos, traçantes e explosões) e o
    * céu não vira uma névoa leitosa em cima da cena.
    */
-  bloomStrength: 0.62,
+  bloomStrength: 0.5,   // [FPS2] bloom mais leve (era 0.62)
   bloomRadius: 0.6,
   bloomThreshold: 1.55,
   /** Exposição do tone mapping (o céu já é reescalado em gfx/sky.js). */
@@ -354,13 +411,13 @@ export const QUALITY = {
  * resultado era janela e poste virando bolha branca. Agora cada um puxa pouco.
  */
 export const NIGHT = {
-  exposureBoost: 0.10,        // soma à exposição do dia
+  exposureBoost: 0.38,        // soma à exposição do dia (noite jogável) [22]
   bloomStrengthBoost: 0.26,   // soma à força do bloom
   bloomThresholdDrop: 0.28,   // subtrai do limiar do bloom
   windowGlow: 0.85,           // emissivo das janelas acesas [20]
-  lampLens: 1.7,              // emissivo da lente do poste [22]
-  lampGlow: 0.45,             // opacidade do halo do poste
-  lampPower: 22,              // intensidade da PointLight do poste
+  lampLens: 1.5,              // emissivo da lente do poste [22]
+  lampGlow: 0.5,              // opacidade do halo do poste
+  lampPower: 50,              // intensidade da PointLight do poste
   trafficLens: 0.7,           // acréscimo no emissivo do semáforo [4]
 };
 
@@ -404,20 +461,38 @@ export const PRESETS = [
     renderScale: 0.75,
     // sombra curta e barata: pega o que está perto do jogador, que é o que
     // realmente se vê, e deixa o passe de sombra pequeno
-    shadows: true, shadowMapSize: 1024, shadowRadius: 45,
+    shadows: true, shadowMapSize: 1024, shadowRadius: 38,   // [FPS2] area de sombra -29% (menos casters no passe)
+    shadowType: 'basic',     // [FPS] PCF basico (era PCFSoft): ~35% mais barato no passe de sombra
     bloom: true, smaa: false, bloomScale: 0.4,
-    dynamicLights: 2,
+    dynamicLights: 3,
     fogFar: 1900,
     envUpdate: 6,
+    shadowTickEvery: 3,     // [FPS] sombra a cada 3 frames (era 2): -33% de custo
+    dynFloor: 0.62,         // [FPS] mais margem p/ a resolucao dinamica agir antes de travar
   },
   {
     id: 'alta', label: 'ALTA',
     renderScale: 1.0,
     shadows: true, shadowMapSize: 2048, shadowRadius: 85,
     bloom: true, smaa: true, bloomScale: 0.55,
-    dynamicLights: 5,
+    dynamicLights: 6,
     fogFar: 2300,
     envUpdate: 3,
+  },
+  {
+    id: '120fps', label: '120 FPS',
+    renderScale: 0.5,
+    shadows: true, shadowMapSize: 1024, shadowRadius: 40,
+    shadowType: 'basic',
+    bloom: false, smaa: false, bloomScale: 0.4,
+    dynamicLights: 1,
+    fogFar: 1500,
+    envUpdate: 12,
+    pixelRatioCap: 1.25,
+    dynFloor: 0.55,
+    targetMsHigh: 8.0,
+    targetMsLow: 6.5,
+    shadowTickEvery: 3,
   },
 ];
 

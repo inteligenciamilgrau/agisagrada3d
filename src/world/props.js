@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as THREE from '../../vendor/three.module.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 import { CELL, ROAD_W, BLOCK_INNER, CURB_H, QUALITY, PROP_OFF, NIGHT } from '../config.js';
 import { makeRng, rngRange, rngInt, dist2Sq } from '../utils.js';
 import { glowTexture } from '../gfx/textures.js';
@@ -228,7 +228,7 @@ export class Props {
     const n = this.treeSpots.length;
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, n);
     const leaves = new THREE.InstancedMesh(leafGeo, leafMat, n);
-    trunks.castShadow = true; leaves.castShadow = true;      // [44]
+    trunks.castShadow = true; leaves.castShadow = false;      // [FPS] folhas nao projetam sombra (so o tronco)
     trunks.receiveShadow = true; leaves.receiveShadow = true;
 
     const m = new THREE.Matrix4();
@@ -309,7 +309,7 @@ export class Props {
   /** [13][22] Acende a iluminação pública e move as luzes reais para perto do jogador. */
   update(dt, nightFactor, focus) {
     this.nightAmount = nightFactor;
-    const on = Math.pow(Math.max(0, (nightFactor - 0.25) / 0.75), 0.8);
+    const on = Math.pow(Math.min(1, Math.max(0, (nightFactor - 0.1) / 0.45)), 0.8);
 
     this.lampLensMat.emissiveIntensity = on * NIGHT.lampLens;
     this.glowMat.opacity = on * NIGHT.lampGlow;
@@ -334,37 +334,41 @@ export class Props {
     }
     if (!enabled || this._activeLights === 0) return;
 
-    // reposicionar as luzes é caro à toa a 60fps: 5x por segundo basta
-    this._selTimer -= dt;
-    if (this._selTimer > 0) return;
-    this._selTimer = 0.2;
-
-    // seleção das N mais próximas sem alocar nem ordenar a lista toda
+    // seleção das N mais próximas sem alocar nem ordenar a lista toda (5x/s)
     const N = this._activeLights;
     const bestLamp = this._bestLamp, bestD2 = this._bestD2;
-    for (let i = 0; i < N; i++) { bestLamp[i] = null; bestD2[i] = Infinity; }
-
-    for (const lamp of this.lamps) {
-      const d2 = dist2Sq(lamp.x, lamp.z, focus.x, focus.z);
-      if (d2 >= 60 * 60 || d2 >= bestD2[N - 1]) continue;
-      let k = N - 1;
-      while (k > 0 && bestD2[k - 1] > d2) {
-        bestD2[k] = bestD2[k - 1];
-        bestLamp[k] = bestLamp[k - 1];
-        k--;
+    this._selTimer -= dt;
+    if (this._selTimer <= 0) {
+      this._selTimer = 0.2;
+      for (let i = 0; i < N; i++) { bestLamp[i] = null; bestD2[i] = Infinity; }
+      for (const lamp of this.lamps) {
+        const d2 = dist2Sq(lamp.x, lamp.z, focus.x, focus.z);
+        if (d2 >= 85 * 85 || d2 >= bestD2[N - 1]) continue;
+        let k = N - 1;
+        while (k > 0 && bestD2[k - 1] > d2) {
+          bestD2[k] = bestD2[k - 1];
+          bestLamp[k] = bestLamp[k - 1];
+          k--;
+        }
+        bestD2[k] = d2;
+        bestLamp[k] = lamp;
       }
-      bestD2[k] = d2;
-      bestLamp[k] = lamp;
     }
 
+    // todo frame: interpola suave até os postes-alvo — a luz DESLIZA e a
+    // intensidade sobe/desce gradualmente (anti-pisca: antes teleportava de
+    // poste a cada 0.2s e a intensidade cortava de 50 -> 0 instantâneo)
+    const fade = 1 - Math.exp(-6 * dt);
     for (let i = 0; i < N; i++) {
       const l = this.lampLights[i];
       const lamp = bestLamp[i];
       if (lamp) {
-        l.position.set(lamp.x, lamp.y, lamp.z);
-        l.intensity = on * NIGHT.lampPower;
+        l.position.x += (lamp.x - l.position.x) * fade;
+        l.position.z += (lamp.z - l.position.z) * fade;
+        l.position.y = lamp.y;
+        l.intensity += (on * NIGHT.lampPower - l.intensity) * fade;
       } else {
-        l.intensity = 0;      // apagada, mas continua visível (sem recompilar)
+        l.intensity += (0 - l.intensity) * fade;   // apaga suave (sem recompilar)
       }
     }
   }
