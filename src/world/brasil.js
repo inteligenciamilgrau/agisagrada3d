@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as THREE from '../../vendor/three.module.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 import { makeRng, rngRange, rngInt, clamp, lerp, smoothstep } from '../utils.js';
 import { terrainHeight } from './terrain.js';
 import {
@@ -97,8 +97,9 @@ export class BrazilLandmarks {
 
   build() {
     this._herciliLuz();       // [57]
-    this._museuDoOlho();      // [58]
-    this._pelourinho();       // [59]
+    // [CENARIO-LIMPO] museu do olho e pelourinho removidos: em volta da cidade so lago, pontes e Cristo
+    // this._museuDoOlho();      // [58]
+    // this._pelourinho();       // [59]
   }
 
   /** Registra um material para acender junto com a noite. */

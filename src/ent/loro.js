@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { MODELOS, montarModelo } from './voxeldef.js';
 
 /**
@@ -21,13 +21,15 @@ const ALVO_ATRAS = 1.15;       // atrás do ombro
 const ALVO_LADO = 0.85;        // deslocado para a direita
 
 export class Loro {
-  constructor(scene) {
+  /** @param {object} opts {cor} cor do corpo/rabo (mantém bico e olhos) */
+  constructor(scene, opts = {}) {
     const m = montarModelo(MODELOS.loro);
     this.root = m.root;
     this.corpo = m.corpo;
     this.asas = m.asas;
     this.root.scale.setScalar(0.55);      // bicho de ombro, não de mochila
     scene.add(this.root);
+    if (opts.cor != null) this._pintar(opts.cor);
 
     this.alvo = new THREE.Vector3();
     this.vel = new THREE.Vector3();
@@ -45,6 +47,22 @@ export class Loro {
     this.presa = null;            // Foe visado
     this.recarga = 0;             // não pode sair mergulhando sem parar
     this.onAcerto = null;
+  }
+
+  /**
+   * Re-pinta corpo, asas e rabo (as cores do modelo original: verde-neon e
+   * rabo azul). Usa clone de material — o cache global do voxMaterial é
+   * compartilhado, pintar por cima mudaria todos os Loro do jogo.
+   */
+  _pintar(cor) {
+    this.corpo.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      const hex = o.material.color ? o.material.color.getHex() : 0;
+      if (hex === 0x3ddc84 || hex === 0x2fbf6f || hex === 0x25d0ff) {
+        o.material = o.material.clone();
+        o.material.color.setHex(cor);
+      }
+    });
   }
 
   get podeAtacar() { return this.estado === 'segue' && this.recarga <= 0; }

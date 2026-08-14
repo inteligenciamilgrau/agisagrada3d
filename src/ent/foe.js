@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { VoxelFigure, ALTURA } from './voxel.js';
 import { HUMANOIDES, MODELOS, montarModelo } from './voxeldef.js';
 import { CORCOVADO } from '../world/landmarks.js';
@@ -25,37 +25,37 @@ import { CORCOVADO } from '../world/landmarks.js';
  */
 export const FICHAS = {
   drone: {
-    vida: 20, vel: 6.5, voa: 3.2, dano: 1, alcance: 2.2, recarga: 1.5, pontos: 5,
+    vida: 20, vel: 5.2, voa: 3.2, dano: 1, alcance: 2.2, recarga: 1.5, pontos: 5,
     modelo: 'drone',
     bola: { raio: 0.42, vel: 30, recarga: 2.2, alcance: 55, cor: 0xff4d4d },
   },
   crawler: {
-    vida: 26, vel: 4.6, dano: 1, alcance: 2.0, recarga: 1.4, pontos: 5,
+    vida: 26, vel: 3.7, dano: 1, alcance: 2.0, recarga: 1.4, pontos: 5,
     modelo: 'crawler',
     bola: { raio: 0.5, vel: 24, recarga: 2.6, alcance: 42, cor: 0xff7a1a },
   },
   lobista: {
-    vida: 32, vel: 3.4, dano: 1, alcance: 2.4, recarga: 1.6, pontos: 8,
+    vida: 32, vel: 2.8, dano: 1, alcance: 2.4, recarga: 1.6, pontos: 8,
     humano: 'lobista',
     bola: { raio: 0.55, vel: 26, recarga: 3.0, alcance: 45, cor: 0xffd700 },
   },
   advogado: {
-    vida: 40, vel: 3.0, dano: 1, alcance: 2.4, recarga: 1.8, pontos: 10,
+    vida: 40, vel: 2.5, dano: 1, alcance: 2.4, recarga: 1.8, pontos: 10,
     humano: 'advogado',
     bola: { raio: 0.62, vel: 22, recarga: 3.2, alcance: 48, cor: 0xf5f5f0 },
   },
   pm: {
-    vida: 34, vel: 3.6, dano: 1, alcance: 2.6, recarga: 1.5, pontos: 8,
+    vida: 34, vel: 3.0, dano: 1, alcance: 2.6, recarga: 1.5, pontos: 8,
     humano: 'pm',
     bola: { raio: 0.55, vel: 27, recarga: 2.8, alcance: 45, cor: 0x0d9488 },
   },
   optimus: {
-    vida: 46, vel: 3.8, dano: 1, alcance: 2.4, recarga: 1.4, pontos: 12,
+    vida: 46, vel: 3.1, dano: 1, alcance: 2.4, recarga: 1.4, pontos: 12,
     humano: 'optimus',
     bola: { raio: 0.6, vel: 32, recarga: 2.4, alcance: 52, cor: 0xff4d4d },
   },
   clone: {
-    vida: 38, vel: 4.4, dano: 1, alcance: 2.4, recarga: 1.3, pontos: 12,
+    vida: 38, vel: 3.5, dano: 1, alcance: 2.4, recarga: 1.3, pontos: 12,
     humano: 'clone',
     bola: { raio: 0.5, vel: 28, recarga: 2.5, alcance: 46, cor: 0x25d0ff },
   },
@@ -65,7 +65,7 @@ export const FICHAS = {
 export const CHEFES = {
   estagiario: {
     nome: 'ESTAGIÁRIO VIBE-CODER',
-    vida: 210, vel: 4.0, dano: 1, alcance: 4.5, recarga: 1.7,
+    vida: 210, vel: 3.3, dano: 1, alcance: 4.5, recarga: 1.7,
     pontos: 100, humano: 'estagiario', porte: 'medio',
     fases: [
       { ate: 1.00, rotulo: 'CUMPRINDO OKR',        chama: 2, tipo: 'drone', intervalo: 6.0 },
@@ -74,7 +74,7 @@ export const CHEFES = {
     ],
   },
   trunfo: {
-    nome: 'DONALD TRUNFO', vida: 300, vel: 3.6, dano: 1, alcance: 4.5, recarga: 1.6,
+    nome: 'DONALD TRUNFO', vida: 300, vel: 3.0, dano: 1, alcance: 4.5, recarga: 1.6,
     pontos: 250, humano: 'trunfo', porte: 'medio',
     fases: [
       // a cada troca de padrão ele "muda de opinião", como no roteiro
@@ -92,11 +92,11 @@ export const CHEFES = {
    * a travessia leva ~72 s, e esse é o relógio real da fase.
    */
   trunfoGigante: {
-    nome: 'DONALD TRUNFO', vida: 900, vel: 9, dano: 1, alcance: 20, recarga: 2.2,
+    nome: 'DONALD TRUNFO', vida: 900, vel: 7.2, dano: 1, alcance: 20, recarga: 2.2,
     pontos: 400, humano: 'trunfo', porte: 'colossal', colossal: true, marcha: true,
     fases: [
-      { ate: 1.00, rotulo: 'REGULAMENTAÇÃO É CRIME',        vel: 9,  canetada: 1, intervalo: 3.4 },
-      { ate: 0.60, rotulo: 'EU INVENTEI A REGULAMENTAÇÃO',  vel: 12, canetada: 2, intervalo: 2.6 },
+      { ate: 1.00, rotulo: 'REGULAMENTAÇÃO É CRIME',        vel: 7.2,  canetada: 1, intervalo: 3.4 },
+      { ate: 0.60, rotulo: 'EU INVENTEI A REGULAMENTAÇÃO',  vel: 9.6, canetada: 2, intervalo: 2.6 },
       /*
        * Último ato: encurralado, ele larga a marcha e SOBE O CORCOVADO
        * para se agarrar no Cristo. A pressão inverte — até aqui o
@@ -106,7 +106,7 @@ export const CHEFES = {
       {
         // corre de volta morro acima: a fuga tem que ser rápida, senão
         // o último ato vira uma caminhada de dois minutos
-        ate: 0.28, rotulo: 'AGARRADO NO CRISTO REDENTOR', vel: 26,
+        ate: 0.28, rotulo: 'AGARRADO NO CRISTO REDENTOR', vel: 21,
         canetada: 3, intervalo: 1.7,
         /*
          * FUNÇÃO, não objeto: `CORCOVADO.topY` só passa a existir quando
@@ -120,7 +120,7 @@ export const CHEFES = {
   },
 
   ilon: {
-    nome: 'ILON MOSCA', vida: 520, vel: 4.2, dano: 1, alcance: 13, recarga: 1.9,
+    nome: 'ILON MOSCA', vida: 520, vel: 3.4, dano: 1, alcance: 13, recarga: 1.9,
     pontos: 250, humano: 'ilon', porte: 'grande',
     fases: [
       // fase 1: tuíta de cima mandando robô; fase 2: desce e briga
@@ -132,7 +132,7 @@ export const CHEFES = {
   },
 
   samuca: {
-    nome: 'SAMUCA ALTÍSSIMO', vida: 330, vel: 4.4, dano: 1, alcance: 4.5, recarga: 1.6,
+    nome: 'SAMUCA ALTÍSSIMO', vida: 330, vel: 3.6, dano: 1, alcance: 4.5, recarga: 1.6,
     pontos: 250, humano: 'samuca', porte: 'medio',
     fases: [
       { ate: 1.00, rotulo: 'EXPERIÊNCIA ANTECIPADA DE COMBATE', chama: 2, tipo: 'pm', intervalo: 5.0 },
@@ -142,7 +142,7 @@ export const CHEFES = {
   },
 
   dario: {
-    nome: 'DÁRIO AMÔ-DEI', vida: 560, vel: 3.6, dano: 1, alcance: 13, recarga: 2.0,
+    nome: 'DÁRIO AMÔ-DEI', vida: 560, vel: 3.0, dano: 1, alcance: 13, recarga: 2.0,
     pontos: 250, humano: 'dario', porte: 'grande',
     fases: [
       { ate: 1.00, rotulo: 'ASPIRANDO SEUS DADOS', chama: 2, tipo: 'crawler', intervalo: 4.8 },
@@ -151,7 +151,7 @@ export const CHEFES = {
   },
 
   deepzeek: {
-    nome: 'XI DEEP-ZEEK', vida: 950, vel: 7.5, dano: 1, alcance: 23, recarga: 2.2,
+    nome: 'XI DEEP-ZEEK', vida: 950, vel: 6.2, dano: 1, alcance: 23, recarga: 2.2,
     pontos: 300, modelo: 'deepzeek', porte: 'colossal', voa: true, colossal: true,
     fases: [
       /*
@@ -159,9 +159,9 @@ export const CHEFES = {
        * dragão usa a BOLA DE FOGO do porte colossal — seis metros de
        * diâmetro, que é o que se espera de um bicho desse tamanho.
        */
-      { ate: 1.00, rotulo: 'GOLPES CATALOGADOS E CLONADOS', chama: 2, tipo: 'clone', vel: 7.5 },
+      { ate: 1.00, rotulo: 'GOLPES CATALOGADOS E CLONADOS', chama: 2, tipo: 'clone', vel: 6.2 },
       // solta o próprio modelo de graça: para de chamar clone contra você
-      { ate: 0.40, rotulo: 'ABRIU O MODELO DE GRAÇA', chama: 0, vel: 9 },
+      { ate: 0.40, rotulo: 'ABRIU O MODELO DE GRAÇA', chama: 0, vel: 7.2 },
     ],
   },
 };
@@ -184,6 +184,8 @@ export class Foe {
     this.recarga = 0;
     this.t = Math.random() * 6;
     this.morteT = 0;
+    this.ladoDesvio = 0;   // [FIX-vibração] lado memorizado do deslize (não alterna por frame)
+    this.ladoT = 0;        // tempo travado em beco (troca de lado a cada 1.2s)
 
     if (ficha.humano) {
       const spec = { ...HUMANOIDES[ficha.humano] };
@@ -282,12 +284,52 @@ export class Foe {
     if (distH > parar) {
       vel = this.ficha.vel;
       const passo = Math.min(vel * dt, distH - parar);
-      p.x += (dx / distH) * passo;
-      p.z += (dz / distH) * passo;
+      // [FIX-vibração] olha ANTES de mover: anda reto SÓ se o destino direto
+      // está livre. Bloqueado, desliza pela tangente com LADO MEMORIZADO
+      // (this.ladoDesvio) — nunca alterna o lado por frame, então o bot não
+      // vibra de um lado para o outro contra a parede.
+      const ux = dx / distH, uz = dz / distH;
+      const nx0 = p.x + ux * passo;
+      const nz0 = p.z + uz * passo;
+
+      if (col && !this.ficha.colossal && col.isBlocked(nx0, nz0, 0.72, 0.5)) {
+        // bloqueado por prédio: desliza pela tangente no lado memorizado
+        const raio = 0.72;
+        const tx = uz, tz = -ux;
+        if (!this.ladoDesvio) {
+          const livreA = !col.isBlocked(p.x + tx * passo * 2, p.z + tz * passo * 2, raio, 0.5);
+          const livreB = !col.isBlocked(p.x - tx * passo * 2, p.z - tz * passo * 2, raio, 0.5);
+          this.ladoDesvio = livreA && !livreB ? 1 : !livreA && livreB ? -1 : (Math.random() < 0.5 ? 1 : -1);
+        }
+        let nx = p.x + tx * passo * this.ladoDesvio;
+        let nz = p.z + tz * passo * this.ladoDesvio;
+        if (col.isBlocked(nx, nz, raio, 0.5)) {
+          // lado travado: tenta o oposto (e memoriza)
+          nx = p.x - tx * passo * this.ladoDesvio;
+          nz = p.z - tz * passo * this.ladoDesvio;
+          if (!col.isBlocked(nx, nz, raio, 0.5)) {
+            this.ladoDesvio = -this.ladoDesvio;
+          } else {
+            // beco/canto: tenta reto mesmo assim (resolveCircle empurra p/ a
+            // direção de menor resistência e o bot escapa) — troca de lado só
+            // a cada 1.2s, nunca por frame (sem vibração)
+            this.ladoT = (this.ladoT || 0) + dt;
+            if (this.ladoT > 1.2) { this.ladoDesvio = Math.random() < 0.5 ? 1 : -1; this.ladoT = 0; }
+            nx = nx0; nz = nz0;
+          }
+        }
+        p.x = nx; p.z = nz;
+        col.resolveCircle(p, raio, this.altura + 0.6);
+      } else {
+        // caminho livre: anda reto
+        p.x = nx0; p.z = nz0;
+        if (col && !this.ficha.colossal) col.resolveCircle(p, 0.72, this.altura + 0.6);
+      }
+
       // não atravessa a parede da arena
       if (arena && !arena.dentro(p.x, p.z, -1)) {
-        p.x -= (dx / distH) * passo;
-        p.z -= (dz / distH) * passo;
+        p.x -= ux * passo;
+        p.z -= uz * passo;
       }
     } else if (this.recarga <= 0) {
       if (b && distH > this.ficha.alcance) {

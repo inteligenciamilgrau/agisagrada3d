@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { makeRng, rngRange, rngPick } from '../utils.js';
 
 /**

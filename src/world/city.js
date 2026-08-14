@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as THREE from '../../vendor/three.module.js';
+import { mergeGeometries } from '../../vendor/jsm/utils/BufferGeometryUtils.js';
 import {
   GRID, CELL, HALF, ROAD_W, ROAD_H, CURB, CURB_H, BLOCK_INNER, PALETTE,
   LANE, WALK_OFF, STOP_LINE, NIGHT,
@@ -524,7 +524,6 @@ export class City {
       pad.translate(x, top + 0.06, z);
       padOut.push(pad);
       this.rooftopPads.push({ x, z, y: top + 0.06, r: R });
-      this.col.addBox(x, z, R, R, top + 0.06, 'helipad');
     }
   }
 

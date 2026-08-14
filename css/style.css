@@ -28,17 +28,27 @@ canvas#scene{position:fixed; inset:0; width:100vw; height:100vh; display:block; 
 button{font-family:var(--font)}
 
 /* ------------------------- HUD ------------------------- */
-#hud{position:fixed; inset:0; pointer-events:none; z-index:10}
+#hud{position:fixed; inset:0; pointer-events:none; z-index:30}
 
-/* [42] mira a 2/5 (40%) do topo da tela */
+/* [FIXO] reticulado HARD-LOCKED no centro absoluto do viewport (50%, 50%) — nunca desloca */
 #crosshair{
-  position:absolute; left:50%; top:40%;
+  position:absolute; left:50%; top:50%;
   transform:translate(-50%,-50%);
   width:64px; height:64px;
   filter:drop-shadow(0 0 3px rgba(0,0,0,.9));
-  transition:transform .06s ease-out;
+  /* [FIXO] sem transicao de posicao: left/top nunca mudam (retido 100% fixo no centro) */
 }
-#crosshair.recoil{transform:translate(-50%,-50%) scale(1.28)}
+#crosshair.center{left:50%; top:50%}   /* [FIXO] central absoluto (redundante com o default, por seguranca) */
+
+/* [CODM-FIX] Red Dot óptico: ponto vermelho no centro durante o ADS — UI por cima
+   da arma 3D (z-index do #hud), visibilidade 100% no alvo mesmo com o slide na tela */
+#red-dot{position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px; border-radius:50%; background:#ff2d2d; box-shadow:0 0 4px rgba(255,45,45,.9), 0 0 12px rgba(255,45,45,.4); opacity:0; transition:opacity .15s; pointer-events:none}
+
+/* [FPS] ADS: o reticulado permanece FIXO no centro — o anel fica dourado
+   apenas como feedback do zoom de mira (FOV 62->45). Posicao nunca muda. */
+#crosshair.ads .ch-ring{stroke:rgba(255,225,150,.95); stroke-width:1.7}
+#crosshair.ads .ch-line{stroke:rgba(255,225,150,.85)}
+#crosshair.ads .ch-dot{fill:#ffd778}
 .ch-ring{fill:none; stroke:rgba(255,255,255,.55); stroke-width:1.2}
 .ch-dot{fill:var(--accent)}
 .ch-line{stroke:rgba(255,255,255,.9); stroke-width:2; stroke-linecap:round}
@@ -54,6 +64,20 @@ button{font-family:var(--font)}
 }
 #hitmarker.show{animation:hm .28s ease-out}
 @keyframes hm{0%{opacity:1;transform:scale(.7)}100%{opacity:0;transform:scale(1.5)}}
+#dmg-ind{
+  position:absolute; left:50%; top:50%; width:46px; height:46px;
+  transform:translate(-50%,-50%) rotate(0deg); opacity:0;
+  pointer-events:none; z-index:14;
+  filter:drop-shadow(0 0 6px rgba(255,64,64,.95));
+  transition:opacity .12s ease;
+}
+#dmg-ind{
+  position:absolute; left:50%; top:50%; width:46px; height:46px;
+  transform:translate(-50%,-50%) rotate(0deg); opacity:0;
+  pointer-events:none; z-index:14;
+  filter:drop-shadow(0 0 6px rgba(255,64,64,.95));
+  transition:opacity .12s ease;
+}
 
 /* topo esquerdo */
 #topleft{position:absolute; left:22px; top:18px; display:flex; flex-direction:column; gap:10px}
@@ -145,6 +169,7 @@ button{font-family:var(--font)}
 .heli-row{display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:11px; opacity:.75}
 .heli-row b{font-size:22px; font-weight:800; opacity:1; font-variant-numeric:tabular-nums}
 /* [63] linha do armamento: o número grande atrapalharia, aqui é só um rótulo */
+#heli-fuel{color:#7CFC00}
 .heli-arm{margin-top:4px; border-top:1px solid var(--stroke); padding-top:5px}
 .heli-arm b{font-size:12px; letter-spacing:1.2px; color:var(--accent)}
 #heli-warn{margin-top:6px; font-size:10px; font-weight:800; color:var(--bad); letter-spacing:1px; display:none}
@@ -467,6 +492,10 @@ kbd{
   padding:40px; overflow:auto; font-family:ui-monospace,Consolas,monospace; font-size:13px;
 }
 #fatal pre{white-space:pre-wrap; color:#c9d4e4}
+#fatal .fatal-btn{
+  display:block; margin:26px auto 0; padding:18px 34px; font-size:18px; font-weight:800;
+  background:#ff5a5a; color:#0a0d13; border:0; border-radius:14px; cursor:pointer; touch-action:manipulation;
+}
 
 /* ============================================================
    BOB EM BUSCA DA AGI SAGRADA — telas da campanha
@@ -717,7 +746,7 @@ kbd{
    fecha o painel antes de voltar ao jogo.
    ============================================================ */
 #options-screen, #keys-screen{
-  position:fixed; inset:0; z-index:52; display:flex;
+  position:fixed; inset:0; z-index:160; display:flex;
   align-items:flex-start; justify-content:center; padding:16px;
   overflow-y:auto; overflow-x:hidden;
   background:rgba(3,6,12,.74); backdrop-filter:blur(10px);
@@ -742,6 +771,17 @@ kbd{
 /* ---------------------- lista de teclas ---------------------- */
 #keys-note{margin-bottom:6px}
 #keys-note.alerta{color:var(--bad); opacity:1}
+
+/* [MOBILE] edição de HUD vem ACIMA das teclas do PC — quem joga no celular
+   vê logo o que lhe interessa (posicionar os botões), sem rolar a lista */
+#keys-editar-hud{
+  display:block; width:100%; margin:14px 0 4px;
+  background:linear-gradient(180deg,var(--accent),#c8821f); color:#0a0f18;
+  border:0; border-radius:8px; padding:11px; font-family:var(--font);
+  font-size:12px; font-weight:800; letter-spacing:1.2px; cursor:pointer;
+  box-shadow:0 3px 0 #8a5a12;
+}
+#keys-editar-hud:hover{filter:brightness(1.08)}
 #keys-list, #keys-touch{text-align:left}
 .keys-group{
   font-size:9px; letter-spacing:2px; opacity:.45; font-weight:800;
@@ -853,21 +893,29 @@ body.toque #keys-touch{display:block}
   transition:transform .07s, background .07s;
 }
 .tc-btn.press{transform:scale(.92); background:rgba(255,255,255,.26)}
+/* [COD Mobile] o botão de TIRO também é o analógico de mira: deslizar o
+   dedo no gatilho gira a câmera e a mira acompanha (o botão fica fixo) */
+.tc-btn[data-segura="atirar"]{touch-action:none}
+/* [COD Mobile] o botão de TIRO também é o analógico de mira: deslizar o
+   dedo no gatilho gira a câmera e a mira acompanha (o botão fica fixo) */
+.tc-btn[data-segura="atirar"]{touch-action:none}
 .tc-fogo{
   right:16px; bottom:20px; width:94px; height:94px; font-size:13px;
   border-color:rgba(255,77,77,.6); background:rgba(255,77,77,.24); color:#ffdede;
 }
 .tc-fogo.press{background:rgba(255,77,77,.55)}
-.tc-pular{right:118px; bottom:88px; width:70px; height:70px; font-size:11.5px}
+.tc-pular{right:118px; bottom:98px; width:70px; height:70px; font-size:11.5px}
 .tc-acao{
-  right:122px; bottom:14px; width:66px; height:66px; font-size:11.5px;
+  right:122px; bottom:20px; width:66px; height:66px; font-size:11.5px;
   border-color:rgba(255,176,32,.6); background:rgba(255,176,32,.2); color:#ffe0a8;
 }
 .tc-acao.press{background:rgba(255,176,32,.5)}
 .tc-sec{width:52px; height:52px; font-size:17px; font-weight:700}
-.tc-missil{right:26px; bottom:128px}
+.tc-missil{right:198px; bottom:172px}
 .tc-visao{right:198px; bottom:98px}
 .tc-descer{right:198px; bottom:24px}
+.tc-girar-esq{right:16px; bottom:124px; width:82px; height:82px; font-size:11px}
+.tc-girar-dir{right:110px; bottom:124px; width:82px; height:82px; font-size:11px}
 
 /* telas curtas (celular deitado): o conjunto encolhe junto */
 @media (max-height:430px){
@@ -889,7 +937,9 @@ body.toque #perfbox{
 }
 body.toque #clockbox{display:none}
 body.toque #topleft{
-  left:calc(10px + env(safe-area-inset-left)); top:calc(40px + env(safe-area-inset-top)); gap:6px;
+  left:50%; transform:translateX(-50%); right:auto;
+  top:calc(8px + env(safe-area-inset-top)); gap:6px;
+  flex-direction:row; align-items:center; justify-content:center; flex-wrap:wrap;
 }
 body.toque #hearts{gap:4px}
 body.toque .heart{width:19px; height:19px}
@@ -898,9 +948,9 @@ body.toque .stat-label{font-size:7px; letter-spacing:1px}
 body.toque .stat-value{font-size:14px}
 
 body.toque #objective{
-  left:calc(10px + env(safe-area-inset-left)); right:auto;
-  top:calc(112px + env(safe-area-inset-top));
-  min-width:0; max-width:44vw; padding:6px 10px; gap:8px;
+  left:50%; transform:translateX(-50%); right:auto;
+  top:calc(44px + env(safe-area-inset-top));
+  min-width:0; max-width:60vw; padding:6px 10px; gap:8px;
 }
 body.toque #objective-icon{font-size:17px}
 body.toque #objective-title{font-size:8px; letter-spacing:1.4px}
@@ -908,14 +958,15 @@ body.toque #objective-text{font-size:11px}
 body.toque #objective-dist{font-size:10px}
 
 body.toque #minimap-wrap{
-  right:calc(10px + env(safe-area-inset-right)); top:calc(58px + env(safe-area-inset-top));
-  bottom:auto; width:104px; height:104px;
+  left:calc(10px + env(safe-area-inset-left)); right:auto;
+  top:calc(58px + env(safe-area-inset-top)); bottom:auto;
+  width:104px; height:104px;
 }
 body.toque #compass-n{font-size:9px}
 
 body.toque #missile-gauge{
-  right:calc(10px + env(safe-area-inset-right)); top:calc(172px + env(safe-area-inset-top));
-  bottom:auto; width:104px;
+  left:calc(10px + env(safe-area-inset-left)); right:auto;
+  top:calc(172px + env(safe-area-inset-top)); bottom:auto; width:104px;
 }
 
 /* velocímetro e painel do helicóptero vão para o rodapé central,
@@ -985,3 +1036,96 @@ body.toque #dlg-text{font-size:clamp(15px,2vw,24px)}
   #phone-home{margin:7px auto 0}
   #phone-tip{font-size:10px}
 }
+
+/* ==================== PAUSA (solo, DM e BR) ==================== */
+/* z100: acima de todo o HUD (solo 10/20 e MP 95/96); OPÇÕES/CONTROLES
+   sobem para 160 e ficam por cima do painel quando abertos da pausa */
+#pause-screen{
+  position:fixed; inset:0; z-index:100; display:flex;
+  align-items:center; justify-content:center;
+  background:radial-gradient(circle at center, rgba(12,20,35,.82) 0%, rgba(3,6,12,.95) 100%);
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+}
+.pause-panel{
+  display:flex; flex-direction:column; gap:12px;
+  min-width:min(360px, 88vw); padding:34px 40px;
+}
+.pause-panel h2{margin-bottom:6px}
+.pause-btn{
+  padding:14px 20px; font-size:15px; font-weight:900; letter-spacing:2px;
+  background:rgba(255,255,255,.07); border:1px solid var(--stroke); color:var(--ink);
+  border-radius:14px; cursor:pointer;
+  transition:background .15s, transform .12s, border-color .15s;
+}
+.pause-btn:hover{background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.35)}
+.pause-btn:active{transform:scale(.97)}
+#pause-retomar{
+  background:linear-gradient(180deg,#ffc451,var(--accent)); color:#1a1000; border:none;
+  box-shadow:0 8px 24px rgba(255,176,32,.35);
+}
+#pause-sair{opacity:.85}
+
+/* ===== [perf F2] touch: sem backdrop-filter ===== */
+/* No Android, 13+ blurs recompositados por cima do WebGL custam caro a cada frame.
+   Em telas touch o HUD usa fundo semi-transparente solido (--panel ja e rgba). */
+@media (hover: none) and (pointer: coarse) {
+  * {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+
+/* ===== editor de HUD (estilo CODM) ===== */
+#hud-editor{position:fixed; inset:0; z-index:900; background:rgba(4,8,16,.35)}
+#hud-editor.hidden{display:none}
+#hud-editor-bar{
+  position:fixed; left:50%; transform:translateX(-50%); top:calc(8px + env(safe-area-inset-top)); z-index:902;
+  display:flex; align-items:center; gap:12px;
+  background:var(--panel); border:1px solid var(--stroke); border-radius:12px;
+  padding:8px 14px; box-shadow:0 10px 30px rgba(0,0,0,.5);
+}
+#hud-editor-titulo{font-weight:800; font-size:13px; letter-spacing:1px}
+#hud-editor-titulo small{display:block; font-weight:400; font-size:9px; opacity:.6; letter-spacing:.3px}
+#hud-editor-acoes{display:flex; gap:6px; flex-wrap:wrap; justify-content:center}
+#hud-editor-acoes button{padding:8px 13px; border-radius:8px; font-weight:700; font-size:11px; cursor:pointer}
+#hud-editor-aviso{
+  position:fixed; left:50%; transform:translateX(-50%); top:calc(66px + env(safe-area-inset-top)); z-index:902;
+  font-size:12px; font-weight:700; color:var(--good); text-shadow:0 2px 8px #000; text-align:center;
+}
+body.hud-edit .tc-btn, body.hud-edit #tc-stick-zone{
+  outline:2px dashed rgba(255,255,255,.55); outline-offset:2px;
+  cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none;
+}
+body.hud-edit .tc-btn.hud-arrastando, body.hud-edit #tc-stick-zone.hud-arrastando{
+  outline-color:#7df; cursor:grabbing; transform:scale(1.06);
+}
+body.hud-edit #tc-top, body.hud-edit #tc-rotate, body.hud-edit #tc-look{display:none}
+
+/* modo edição: o analógico (área de toque gigante) vira um CHIP compacto arrastável,
+   com z-index ABAIXO da barra do editor (902) para nunca atrapalhar SALVAR/FECHAR */
+body.hud-edit #tc-stick-zone{
+  width:84px !important; height:84px !important;
+  min-width:84px !important; min-height:84px !important;
+  max-width:84px !important; max-height:84px !important;
+  border-radius:50%;
+  background:rgba(10,15,24,.55);
+  border:2px dashed rgba(255,255,255,.55);
+  z-index:901 !important;
+  cursor:grab; touch-action:none;
+  display:flex !important; align-items:center; justify-content:center;
+  box-sizing:border-box;
+}
+body.hud-edit #tc-stick-zone::after{ content:'🕹️'; font-size:30px; line-height:1; }
+body.hud-edit #tc-stick-zone #tc-base,
+body.hud-edit #tc-stick-zone #tc-knob{ display:none !important; }
+body.hud-edit #tc-stick-zone.custom-selected{
+  border-color:#fbbf24 !important; box-shadow:0 0 25px rgba(251,191,36,.7) !important;
+}
+
+/* seleção (padrão DINO4): botão tocado ganha destaque âmbar p/ a escala */
+body.hud-edit .tc-btn.custom-selected, body.hud-edit #tc-stick-zone.custom-selected{
+  border-color:#fbbf24 !important; border-style:solid !important;
+  box-shadow:0 0 25px rgba(251,191,36,.7) !important; outline-color:#fbbf24 !important;
+}
+

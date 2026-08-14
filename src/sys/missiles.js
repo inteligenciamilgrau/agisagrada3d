@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { MISSILE, PED, CAR } from '../config.js';
 
 const MAX = 10;
@@ -114,7 +114,7 @@ export class MissileSystem {
   get canFire() { return this.cooldown <= 0; }
 
   /** Dispara do ponto `origin` na direção `direction`. */
-  fire(origin, direction) {
+  fire(origin, direction, alvo) {
     if (this.cooldown > 0) return false;
     const m = this.list.find((x) => !x.alive);
     if (!m) return false;
@@ -126,6 +126,7 @@ export class MissileSystem {
     m.speed = MISSILE.speed;
     m.p.copy(origin);
     m.v.copy(direction).normalize().multiplyScalar(MISSILE.speed);
+    m.alvo = alvo || null;
     m.mesh.visible = true;
     this._orienta(m);
 
@@ -145,6 +146,19 @@ export class MissileSystem {
 
       // o motor acelera até a velocidade máxima
       m.speed = Math.min(MISSILE.maxSpeed, m.speed + MISSILE.accel * dt);
+
+      // [homing] o missil guia para o ponto onde a mira apontava
+      if (m.alvo) {
+        const ax = m.alvo.x - m.p.x, ay = m.alvo.y - m.p.y, az = m.alvo.z - m.p.z;
+        const al = Math.hypot(ax, ay, az);
+        if (al > 0.5) {
+          const k = Math.min(1, MISSILE.turn * dt);
+          m.v.x += ((ax / al) * m.speed - m.v.x) * k;
+          m.v.y += ((ay / al) * m.speed - m.v.y) * k;
+          m.v.z += ((az / al) * m.speed - m.v.z) * k;
+        }
+      }
+
       const dir = this._tmp.copy(m.v).normalize();
       m.v.copy(dir).multiplyScalar(m.speed);
 
@@ -156,6 +170,11 @@ export class MissileSystem {
       }
 
       m.p.addScaledVector(m.v, dt);
+
+      if (m.alvo) {
+        const ax = m.alvo.x - m.p.x, ay = m.alvo.y - m.p.y, az = m.alvo.z - m.p.z;
+        if (ax * ax + ay * ay + az * az < 10.24) { this._detona(m, m.alvo); continue; }   // chegou no ponto da mira
+      }
 
       // rastro: intervalo por DISTÂNCIA, não por quadro — senão o rastro fica
       // ralo quando o míssil está rápido e denso quando está lento

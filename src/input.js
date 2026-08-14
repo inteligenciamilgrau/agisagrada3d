@@ -30,8 +30,8 @@ export class Input {
 
     this.mouseDown = false;
     this.mousePressed = false;      // borda de subida
+    this.mouseRightDown = false;      // botão direito (mira no PC)
     this._justPressed = new Set();
-
     this.onLockChange = null;
     this.onAcao = null;             // callback (idAcao, evento) para ações de borda
 
@@ -54,7 +54,7 @@ export class Input {
     window.addEventListener('keydown', (e) => {
       // ESC precisa passar mesmo com o cursor dentro de um campo de texto,
       // senão não dá para fechar o celular nem pausar enquanto digita [48][56]
-      if (e.code === 'Escape') {
+      if (e.code === 'Escape' || e.code === 'Pause') {
         if (this.onAcao) this.onAcao('menu', e);
         return;
       }
@@ -82,6 +82,7 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.mouseDown = false;
+      this.mouseRightDown = false;
       this.zerarToque();
     });
 
@@ -95,10 +96,13 @@ export class Input {
       if (e.button === 0) {
         if (!this.mouseDown) this.mousePressed = true;
         this.mouseDown = true;
+      } else if (e.button === 2) {
+        this.mouseRightDown = true;
       }
     });
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.mouseDown = false;
+      else if (e.button === 2) this.mouseRightDown = false;
     });
 
     window.addEventListener('wheel', (e) => {
@@ -109,7 +113,7 @@ export class Input {
 
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
-      if (!this.locked) { this.keys.clear(); this.mouseDown = false; }
+      if (!this.locked) { this.keys.clear(); this.mouseDown = false; this.mouseRightDown = false; }
       if (this.onLockChange) this.onLockChange(this.locked);
     });
 

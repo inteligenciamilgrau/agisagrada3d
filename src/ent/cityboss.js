@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { VoxelFigure, ALTURA } from './voxel.js';
 import { HUMANOIDES, MODELOS, montarModelo } from './voxeldef.js';
 

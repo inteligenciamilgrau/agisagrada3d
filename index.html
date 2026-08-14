@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <!-- viewport-fit=cover: no celular com entalhe, o jogo vai até a borda;
      o HUD se protege com env(safe-area-inset-*) no CSS -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,16 +20,9 @@
 <meta property="og:description" content="A cruzada da AGI Sagrada em mundo aberto 3D. Cinco chefões, sete fases, uma cidade brasileira inteira para atravessar.">
 <meta property="og:locale" content="pt_BR">
 <meta name="twitter:card" content="summary">
-<link rel="stylesheet" href="./css/style.css">
+<link rel="stylesheet" href="./css/style.css?v=20260828">
+<link rel="stylesheet" href="./css/multiplayer.css?v=20260828">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏺</text></svg>">
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.180.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/"
-  }
-}
-</script>
 </head>
 <body>
 
@@ -46,7 +42,22 @@
       <line x1="45" y1="32" x2="58" y2="32" class="ch-line"/>
     </svg>
     <div id="hitmarker"></div>
+    <div id="dmg-ind">
+      <svg viewBox="0 0 64 64" width="46" height="46">
+        <path d="M32 3 L41 27 L32 21.5 L23 27 Z" fill="#ff4040"/>
+        <circle cx="32" cy="40" r="4.5" fill="#ff4040"/>
+      </svg>
+    </div>
+    <div id="dmg-ind">
+      <svg viewBox="0 0 64 64" width="46" height="46">
+        <path d="M32 3 L41 27 L32 21.5 L23 27 Z" fill="#ff4040"/>
+        <circle cx="32" cy="40" r="4.5" fill="#ff4040"/>
+      </svg>
+    </div>
   </div>
+
+  <!-- [CODM-FIX] Red Dot óptico: ponto vermelho no centro durante o ADS, por cima da arma 3D -->
+  <div id="red-dot"></div>
 
   <!-- topo esquerdo: vidas, pontos, tempo -->
   <div id="topleft">
@@ -98,6 +109,7 @@
   <div id="heli-panel" class="hidden">
     <div class="heli-row"><span>ALT</span><b id="heli-alt">0</b><span>m</span></div>
     <div class="heli-row"><span>VEL</span><b id="heli-spd">0</b><span>km/h</span></div>
+    <div class="heli-row"><span>FUEL</span><b id="heli-fuel">100%</b></div>
     <!-- [63] no ar, o E/clique dispara míssil no lugar da pistola -->
     <div class="heli-row heli-arm"><span>ARM</span><b>MÍSSEIS</b><span id="heli-arm-key">E / clique</span></div>
     <div id="heli-warn">DESÇA PARA SAIR</div>
@@ -223,6 +235,7 @@
     <!-- [62] só aparece quando existe uma partida em andamento por trás do menu -->
     <button id="resume-title-btn" class="hidden">VOLTAR AO JOGO</button>
     <button id="start-btn">INICIAR JOGO</button>
+    <button id="mp-btn" type="button" disabled>🌐 MULTIJOGADOR</button>
     <div id="start-warn" class="hidden">apaga o Plano da AGI e recomeça do zero</div>
 
     <div id="title-links">
@@ -273,6 +286,7 @@
         <button type="button" class="choice" data-qual="0">BAIXA</button>
         <button type="button" class="choice active" data-qual="1">MÉDIA</button>
         <button type="button" class="choice" data-qual="2">ALTA</button>
+        <button type="button" class="choice" data-qual="3">120 FPS</button>
       </div>
       <span class="choice-note">no celular, BAIXA é o que segura os 30 FPS</span>
     </div>
@@ -325,15 +339,18 @@
     <h2>CONTROLES</h2>
     <p id="keys-note" class="muted">Clique numa tecla e aperte a nova.</p>
 
-    <div id="keys-list"></div>
-
     <div id="keys-touch">
       <div class="keys-group">NO CELULAR</div>
       <div class="keys-row"><span class="keys-name">Andar e correr</span><span class="keys-tag">analógico (empurre até o fim para correr)</span></div>
       <div class="keys-row"><span class="keys-name">Olhar em volta · zoom</span><span class="keys-tag">arrastar na tela · dois dedos</span></div>
       <div class="keys-row"><span class="keys-name">Atirar · pular · agir</span><span class="keys-tag">botões à direita</span></div>
       <div class="keys-row"><span class="keys-name">Menu · Plano · celular</span><span class="keys-tag">☰ 📋 📱 no alto da tela</span></div>
+      <div class="keys-row"><span class="keys-name">Posição dos botões</span><span class="keys-tag">arraste e salve seu layout</span></div>
     </div>
+
+    <button id="keys-editar-hud" type="button">🖱️ EDITAR HUD</button>
+
+    <div id="keys-list"></div>
 
     <div class="menu-actions">
       <button id="keys-close" class="ghost">FECHAR</button>
@@ -358,6 +375,40 @@
   </div>
 </div>
 
+<!-- ==================== PAUSA (solo, DM e BR) ==================== -->
+<!-- ==================== EDITOR DE HUD (estilo CODM) ==================== -->
+<div id="hud-editor" class="hidden">
+  <div id="hud-editor-bar">
+    <div id="hud-editor-titulo">EDITAR HUD<small>arraste cada botão para onde quiser</small></div>
+    <div id="hud-editor-acoes">
+      <button type="button" id="hud-editor-menos" class="ghost" title="Diminuir botões">➖</button>
+      <button type="button" id="hud-editor-mais" class="ghost" title="Aumentar botões">➕</button>
+      <button type="button" id="hud-editor-salvar">💾 SALVAR</button>
+      <button type="button" id="hud-editor-padrao" class="ghost">↺ PADRÃO</button>
+      <button type="button" id="hud-editor-fechar" class="ghost">FECHAR</button>
+    </div>
+  </div>
+  <div id="hud-editor-aviso"></div>
+</div>
+
+
+
+
+<!--
+  A MESMA tela de pausa para os três modos, com os MESMOS menus de
+  configuração: OPÇÕES e CONTROLES são as telas do modo solo. Chega por
+  Pause/Break, ESC ou o botão voltar do Android.
+-->
+<div id="pause-screen" class="hidden">
+  <div class="pause-panel panel">
+    <h2>PAUSADO</h2>
+    <button type="button" id="pause-retomar" class="pause-btn">▶ RETOMAR</button>
+    <button type="button" id="pause-opcoes" class="pause-btn">⚙️ OPÇÕES</button>
+    <button type="button" id="pause-controles" class="pause-btn">🎮 CONTROLES</button>
+    <button type="button" id="pause-sair" class="pause-btn ghost">🚪 SAIR DA PARTIDA</button>
+  </div>
+</div>
+
 <!-- ==================== CONTROLES NA TELA (celular) ==================== -->
 <!--
   A ordem importa: a área de olhar é a camada de baixo e ocupa a tela
@@ -370,7 +421,7 @@
   <!-- só aparece em pé: deitado, o jogo tem o dobro de campo de visão -->
   <div id="tc-rotate">🔄 vire o celular para jogar deitado</div>
 
-  <div id="tc-stick-zone">
+  <div id="tc-stick-zone" data-hud="stick">
     <div id="tc-base"><div id="tc-knob"></div></div>
   </div>
 
@@ -381,26 +432,136 @@
   </div>
 
   <div id="tc-pad">
-    <button type="button" class="tc-btn tc-fogo"  id="tc-fogo"   data-segura="atirar">ATIRAR</button>
-    <button type="button" class="tc-btn tc-pular" id="tc-pular"  data-segura="pular">PULAR</button>
-    <button type="button" class="tc-btn tc-acao"  id="tc-acao"   data-acao="acao">AÇÃO</button>
-    <button type="button" class="tc-btn tc-sec tc-descer hidden" id="tc-descer" data-segura="correr">▼</button>
-    <button type="button" class="tc-btn tc-sec tc-visao hidden"  id="tc-visao"  data-acao="visao">👁</button>
-    <button type="button" class="tc-btn tc-sec tc-missil hidden" id="tc-missil" data-acao="missil">🚀</button>
+    <button type="button" class="tc-btn tc-fogo"  id="tc-fogo"   data-hud="fogo" data-segura="atirar">ATIRAR</button>
+    <button type="button" class="tc-btn tc-pular" id="tc-pular"  data-hud="pular" data-segura="pular">PULAR</button>
+    <button type="button" class="tc-btn tc-acao"  id="tc-acao"   data-hud="acao" data-acao="acao">AÇÃO</button>
+    <button type="button" class="tc-btn tc-sec tc-descer hidden" id="tc-descer" data-hud="descer" data-segura="correr">▼</button>
+    <button type="button" class="tc-btn tc-sec tc-visao hidden"  id="tc-visao"  data-hud="visao" data-acao="visao">👁</button>
+    <button type="button" class="tc-btn tc-sec tc-missil hidden" id="tc-missil" data-hud="missil" data-acao="missil">🚀</button>
+    <button type="button" class="tc-btn tc-sec tc-girar-esq hidden" id="tc-girar-esq" data-hud="girar-esq" data-segura="girarEsq" title="Girar esquerda">◀</button>
+    <button type="button" class="tc-btn tc-sec tc-girar-dir hidden" id="tc-girar-dir" data-hud="girar-dir" data-segura="girarDir" title="Girar direita">▶</button>
   </div>
 </div>
 
+
+  <style>
+    .mp-roupa { display:flex; flex-wrap:wrap; gap:6px; }
+    .mp-cor { width:26px; height:26px; border-radius:50%; border:2px solid rgba(255,255,255,.25); cursor:pointer; padding:0; }
+    .mp-cor.ativa { border-color:#fff; transform:scale(1.18); box-shadow:0 0 8px rgba(255,255,255,.5); }
+  </style>
+  <style>
+    .mp-roupa { display:flex; flex-wrap:wrap; gap:6px; }
+    .mp-cor { width:26px; height:26px; border-radius:50%; border:2px solid rgba(255,255,255,.25); cursor:pointer; padding:0; }
+    .mp-cor.ativa { border-color:#fff; transform:scale(1.18); box-shadow:0 0 8px rgba(255,255,255,.5); }
+  </style>
+<!-- ==================== MULTIJOGADOR (Fase 7) ==================== -->
+<div id="mode-select" class="hidden">
+  <div class="mp-modal">
+    <h2>🌐 MODO DE JOGO</h2>
+    <label class="mp-field"><span>SEU NOME</span><input id="mp-nick" type="text" maxlength="14" placeholder="Jogador" value="Jogador"></label>
+    <div class="mp-cards">
+      <button type="button" class="mp-card" id="mp-missoes"><b>📜 MISSÕES</b><span>Campanha solo — o jogo original</span></button>
+      <button type="button" class="mp-card" id="mp-dm"><b>⚔️ MULTIPLAYER</b><span>Mata-mata — 12 jogadores (players + bots)</span></button>
+      <button type="button" class="mp-card mp-br-off" id="mp-br" disabled title="Em breve"><b>🪂 BATTLE ROYALE</b><span>Zona encolhendo, loot, último vivo</span><i class="mp-tag">EM BREVE</i></button>
+    </div>
+    <div class="mp-rodape"><button type="button" class="mp-fechar">VOLTAR</button></div>
+  </div>
+</div>
+
+<div id="lobby-screen" class="hidden">
+  <div class="mp-modal mp-lobby">
+    <div class="lobby-head"><h2 id="lobby-modo">MULTIPLAYER</h2><div id="lobby-countdown" class="lobby-cd"></div></div>
+    <ul id="lobby-list" class="lobby-list"></ul>
+    <div id="lobby-srv" class="lobby-srv"></div>
+    <div id="lobby-alerta" class="lobby-alerta hidden"></div>
+    <div class="lobby-sala">
+      <span>MINHA SALA <b id="lobby-codigo">—</b></span>
+      <span class="lobby-sala-dica">sem outros jogadores? marque pronto e INICIE sozinho com bots</span>
+    </div>
+    <div class="lobby-online">
+      <h3>ONLINE AGORA</h3>
+      <ul id="lobby-online-list" class="lobby-online-list"></ul>
+    </div>
+    <div id="lobby-invite" class="lobby-invite hidden">
+      <span id="lobby-invite-msg"></span>
+      <div class="lobby-invite-botoes">
+        <button type="button" id="invite-aceitar">ACEITAR</button>
+        <button type="button" id="invite-recusar">RECUSAR</button>
+      </div>
+    </div>
+    <div id="lobby-toast" class="lobby-toast hidden"></div>
+    <div class="lobby-botoes">
+      <button type="button" id="mp-pronto">MARCAR PRONTO</button>
+      <button type="button" id="mp-iniciar" style="display:none">INICIAR PARTIDA</button>
+      <button type="button" id="mp-sair">SAIR</button>
+    </div>
+  </div>
+</div>
+
+<div id="mp-hud" class="hidden">
+  <button type="button" id="mp-pausa" class="hidden" title="Pausa">☰</button>
+  <button type="button" id="mp-placar" class="hidden" title="Placar (kills)">🏆</button>
+  <div id="net-status"><span class="dot"></span><span class="ns-estado">off</span><span id="ns-ping">-- ms</span></div>
+  <div id="killfeed"></div>
+  <div id="mp-tempo" class="hidden">5:00</div>
+  <div id="mp-vida"><div id="mp-hp-bar"><div id="mp-hp-fill"></div></div><span id="mp-hp-val">100</span></div>
+  <div id="mp-arma">🔫 pistola</div>
+  <div id="br-hud" class="hidden">
+    <div class="br-linha">ZONA <b id="br-zona">—</b></div>
+    <div class="br-linha">VIVOS <b id="br-vivos">0</b></div>
+    <div class="br-linha">PRÓXIMA <b id="br-tempo">—</b></div>
+    <div class="br-linha">LOOT <b id="br-loot">0</b></div>
+  </div>
+  <div id="scoreboard" class="hidden"><div class="sb-head">PLACAR</div><div id="sb-rows"></div></div>
+</div>
+
+<!-- overlay de morte/vitória do MP (o CSS existe; o HTML tinha sido perdido num merge) -->
+<div id="mp-overlay" class="hidden">
+  <div class="ov-titulo">FIM DE PARTIDA</div>
+  <div class="ov-sub">—</div>
+  <div class="ov-kills">—</div>
+  <button type="button" class="mp-btn mp-btn-back">VOLTAR AO MENU</button>
+  <button type="button" class="mp-btn mp-btn-sair hidden">SAIR DA PARTIDA</button>
+</div>
+
+<div id="mp-joy" class="hidden" data-hud="stick"><div class="knob"></div></div>
+<div id="mp-look" class="hidden"></div>
+<!-- botões de ação do toque: ATIRAR/PULAR/AÇÃO/CORRER (mesmo padrão do modo solo) -->
+<div id="mp-pad" class="hidden">
+  <button type="button" class="tc-btn tc-fogo" id="mp-atirar" data-segura="atirar" data-hud="fogo">ATIRAR</button>
+  <button type="button" class="tc-btn tc-pular" id="mp-pular" data-hud="pular">PULAR</button>
+  <button type="button" class="tc-btn tc-acao" id="mp-acao" data-hud="acao">AÇÃO</button>
+  <button type="button" class="tc-btn tc-sec tc-descer" id="mp-correr" title="Correr" data-hud="correr">⚡</button>
+  <!-- [heli] no ar, o PULAR vira ▲ (subir) e aparece este ▼ (descer) -->
+  <button type="button" class="tc-btn tc-sec tc-descer hidden" id="mp-descer" title="Descer" data-hud="descer">▼</button>
+  <!-- [heli] ◀ ▶ giram o aparelho no ar (visíveis só pilotando) -->
+  <button type="button" class="tc-btn tc-sec tc-girar-esq hidden" id="mp-girar-esq" title="Girar esquerda" data-hud="girar-esq">◀</button>
+  <button type="button" class="tc-btn tc-sec tc-girar-dir hidden" id="mp-girar-dir" title="Girar direita" data-hud="girar-dir">▶</button>
+</div>
+<!-- ==================== FIM MULTIJOGADOR ==================== -->
 <div id="fatal" class="hidden"></div>
 
 <script type="module">
-  import { boot } from './src/main.js';
+  import { boot } from './src/main.js?v=20260828';
   boot().catch((err) => {
     console.error(err);
+    // [DIAG] titulo vira o erro + stack para leitura via snapshot
+    document.title = 'ERRO: ' + (err && err.message) + ' || ' + (err && err.stack ? err.stack.split('\n').slice(1, 4).join(' ~ ') : '') + ' || DIAG: ' + (window.__diag || 'nada');
     const el = document.getElementById('fatal');
     el.classList.remove('hidden');
-    el.innerHTML = '<h3>Falha ao iniciar</h3><pre>' + (err && err.stack || err) + '</pre>' +
-      '<p>Verifique a conexão com a internet (o Three.js é carregado via CDN).</p>';
+    el.innerHTML = '<h3>❌ Falha ao iniciar o jogo</h3><pre>' + (err && err.stack || err) + '</pre>' +
+      '<button id="fatal-reload" class="fatal-btn">🔄 TOCAR PARA RECARREGAR</button>';
+    const fb = document.getElementById('fatal-reload');
+    if (fb) fb.addEventListener('click', () => location.reload());
   });
 </script>
+<!-- convite global: aparece no lobby E durante a partida -->
+<div id="convite-global" class="hidden">
+  <span id="cg-msg"></span>
+  <div class="cg-botoes">
+    <button type="button" id="cg-aceitar">ACEITAR</button>
+    <button type="button" id="cg-recusar">RECUSAR</button>
+  </div>
+</div>
 </body>
 </html>

@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from '../../vendor/three.module.js';
 import { GAME } from '../config.js';
 import { dist2D, rngInt, makeRng } from '../utils.js';
 
